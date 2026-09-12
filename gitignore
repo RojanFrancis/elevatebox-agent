@@ -1,0 +1,27 @@
+# ─── Maven ───────────────────────────────────────────────────────────────────
+target/
+*.class
+*.jar
+*.war
+
+# ─── API Keys — NEVER commit these ──────────────────────────────────────────
+application.yml
+application-prod.yml
+application-local.yml
+*.env
+.env
+
+# ─── IDE ─────────────────────────────────────────────────────────────────────
+.idea/
+*.iml
+.vscode/
+*.DS_Store
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── Spring Boot ─────────────────────────────────────────────────────────────
+.mvn/
+!.mvn/wrapper/maven-wrapper.jar
+!.mvn/wrapper/maven-wrapper.properties

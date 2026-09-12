@@ -1,0 +1,28 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: elevatebox-agent
+
+vapi:
+  private-key: YOUR_VAPI_PRIVATE_KEY
+  assistant-id:   # optional
+
+gemini:
+  api-key: YOUR_GEMINI_API_KEY
+
+elevenlabs:
+  api-key: YOUR_ELEVENLABS_API_KEY
+
+meta:
+  whatsapp:
+    phone-number-id: YOUR_META_PHONE_NUMBER_ID
+    token: YOUR_META_ACCESS_TOKEN
+
+spring.codec:
+  max-in-memory-size: 10MB
+
+logging:
+  level:
+    com.elevatebox: DEBUG
