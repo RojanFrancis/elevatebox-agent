@@ -9,70 +9,75 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class LeadClassifierService {
 
-    private final GeminiService geminiService;
-    private final WhatsAppService whatsAppService;
+    private final GeminiService        geminiService;
+    private final WhatsAppService      whatsAppService;
+    private final FollowUpService      followUpService;
+    private final CallbackService      callbackService;
 
     /**
      * Full post-call pipeline:
-     * 1. Classify the lead from transcript
-     * 2. Summarize the conversation
-     * 3. Generate a tailored follow-up WhatsApp message
-     * 4. Send it to the lead
-     * 5. Return the full result
+     * 1. Classify lead HOT/WARM/COLD
+     * 2. Send post-call WhatsApp with context + resume + number + build image
+     * 3. Check if callback was requested → send confirmation
      */
     public LeadResult processPostCall(String transcript) {
-        log.info("Starting post-call lead processing...");
+        log.info("Starting post-call pipeline...");
 
         // Step 1: classify
         GeminiService.LeadClassification classification = geminiService.classifyLead(transcript);
         log.info("Lead classified as: {}", classification);
 
-        // Step 2: summarize
+        // Step 2: post-call WhatsApp — resume + number + build image + context
+        followUpService.sendPostCallFollowUp(transcript, classification);
+
+        // Step 3: callback scheduling
+        CallbackService.CallbackResult callback = callbackService.scheduleCallback(transcript);
+        if (callback.found()) {
+            log.info("Callback detected: {}", callback.humanReadable());
+            callbackService.sendCallbackConfirmation(callback.humanReadable());
+        }
+
+        // Step 4: summarize
         String summary = geminiService.summarizeConversation(transcript);
-        log.info("Conversation summarized");
 
-        // Step 3: generate WhatsApp follow-up
-        String followUpMessage = geminiService.generateFollowUpMessage(transcript, classification);
-        log.info("Follow-up message generated");
-
-        // Step 4: send WhatsApp to lead
-        String messageSid = whatsAppService.sendPostCallMessage(followUpMessage);
-        log.info("Post-call WhatsApp sent — SID: {}", messageSid);
-
-        // Step 5: build and return result
-        LeadResult result = new LeadResult(classification, summary, followUpMessage, messageSid);
+        LeadResult result = new LeadResult(classification, summary,
+                callback.found(), callback.humanReadable());
         log.info("Post-call pipeline complete: {}", result);
         return result;
     }
 
     /**
-     * Mid-call pipeline — triggered while call is still live.
-     * Sends a contextual WhatsApp (e.g. brochure link) based on partial transcript.
+     * Mid-call pipeline — triggered by HOT intent keywords during live call.
      */
     public String processMidCall(String partialTranscript) {
         log.info("Processing mid-call WhatsApp trigger...");
 
-        String midCallMessage = geminiService.generateMidCallMessage(partialTranscript);
-        String messageSid     = whatsAppService.sendMidCallMessage(midCallMessage);
+        // Only fire if HOT intent detected
+        GeminiService.LeadClassification classification =
+                geminiService.classifyLead(partialTranscript);
 
-        log.info("Mid-call WhatsApp sent — SID: {}", messageSid);
-        return messageSid;
+        if (classification == GeminiService.LeadClassification.HOT) {
+            String midCallMessage = geminiService.generateMidCallMessage(partialTranscript);
+            String sid = whatsAppService.sendMidCallMessage(midCallMessage);
+            log.info("Mid-call WhatsApp sent — SID: {}", sid);
+            return sid;
+        }
+
+        log.info("Mid-call: intent not HOT ({}), skipping WhatsApp", classification);
+        return "NOT_HOT_INTENT";
     }
 
     /**
-     * Quick classify-only — no side effects, just returns HOT/WARM/COLD.
-     * Useful for real-time scoring during the call.
+     * Quick classify only — no side effects.
      */
     public GeminiService.LeadClassification quickClassify(String transcript) {
         return geminiService.classifyLead(transcript);
     }
 
-    // ─── Result record ────────────────────────────────────────────────────────
-
     public record LeadResult(
             GeminiService.LeadClassification classification,
             String summary,
-            String followUpMessage,
-            String whatsAppMessageSid
+            boolean callbackScheduled,
+            String callbackTime
     ) {}
 }
