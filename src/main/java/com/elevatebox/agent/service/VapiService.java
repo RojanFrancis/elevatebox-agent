@@ -19,7 +19,16 @@ public class VapiService {
     private String vapiPrivateKey;
 
     @Value("${vapi.assistant-id:}")
-    private String assistantId;          // optional — set in yml if you have a pre-built assistant
+    private String assistantId;     
+    
+    @Value("${twilio.account-sid}")
+    private String twilioAccountSid;
+
+    @Value("${twilio.auth-token}")
+    private String twilioAuthToken;
+
+    @Value("${twilio.phone-number:+17372508034}")
+    private String twilioPhoneNumber;// optional — set in yml if you have a pre-built assistant
 
     private final WebClient webClient;
     private final Gson gson = new Gson();
@@ -76,9 +85,9 @@ public class VapiService {
         // Phone number — Twilio credentials passed directly to Vapi
         // Vapi will use Twilio to make the outbound call
         JsonObject phoneNumber = new JsonObject();
-        phoneNumber.addProperty("twilioPhoneNumber",  "+17372508034");
-        phoneNumber.addProperty("twilioAccountSid",   "AC634395c2cf954aa7324044a9d50cba8f");
-        phoneNumber.addProperty("twilioAuthToken",    "31ab96ef332707d5d805b7b4aa56997b");
+        phoneNumber.addProperty("twilioPhoneNumber",  twilioPhoneNumber);
+        phoneNumber.addProperty("twilioAccountSid",   twilioAccountSid);
+        phoneNumber.addProperty("twilioAuthToken",    twilioAuthToken);
         payload.add("phoneNumber", phoneNumber);
 
         payload.add("customer", buildCustomer());
