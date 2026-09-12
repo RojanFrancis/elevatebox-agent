@@ -19,7 +19,16 @@ public class VapiService {
     private String vapiPrivateKey;
 
     @Value("${vapi.assistant-id:}")
-    private String assistantId;          // optional — set in yml if you have a pre-built assistant
+    private String assistantId;     
+    
+    @Value("${twilio.account-sid}")
+    private String twilioAccountSid;
+
+    @Value("${twilio.auth-token}")
+    private String twilioAuthToken;
+
+    @Value("${twilio.phone-number:+17372508034}")
+    private String twilioPhoneNumber;// optional — set in yml if you have a pre-built assistant
 
     private final WebClient webClient;
     private final Gson gson = new Gson();
@@ -73,9 +82,14 @@ public class VapiService {
     private JsonObject buildCallPayload() {
         JsonObject payload = new JsonObject();
 
-        // Use Vapi's own number pool — no Twilio voice number needed.
-        // Vapi automatically assigns one of their numbers as caller-id.
-        // Customer (the person being called) goes here:
+        // Phone number — Twilio credentials passed directly to Vapi
+        // Vapi will use Twilio to make the outbound call
+        JsonObject phoneNumber = new JsonObject();
+        phoneNumber.addProperty("twilioPhoneNumber",  twilioPhoneNumber);
+        phoneNumber.addProperty("twilioAccountSid",   twilioAccountSid);
+        phoneNumber.addProperty("twilioAuthToken",    twilioAuthToken);
+        payload.add("phoneNumber", phoneNumber);
+
         payload.add("customer", buildCustomer());
 
         // If you have a saved Vapi assistant use its ID, otherwise inline the assistant config
@@ -104,31 +118,16 @@ public class VapiService {
                 "Hi! This is ElevateBox calling. I wanted to quickly connect with you about our services. " +
                 "Do you have two minutes?");
 
-        // System prompt — this is the brain of the conversation
-        assistant.addProperty("systemPrompt",
+        // Model — systemPrompt goes INSIDE model, not at assistant level
+        JsonObject model = new JsonObject();
+        model.addProperty("provider", "google");
+        model.addProperty("model",    "gemini-2.0-flash-lite");
+        model.addProperty("systemPrompt",
                 "You are a professional sales agent for ElevateBox, an AI-powered business solutions company. " +
                 "Your goal is to qualify leads by understanding their business needs, budget, and timeline. " +
                 "Ask open-ended questions, listen actively, and classify the lead as HOT (ready to buy), " +
                 "WARM (interested but needs nurturing), or COLD (not interested). " +
                 "Be concise, friendly, and never pushy. If the prospect is not interested, thank them politely.");
-
-        // Voice — ElevenLabs
-        JsonObject voice = new JsonObject();
-        voice.addProperty("provider", "11labs");
-        voice.addProperty("voiceId",  "21m00Tcm4TlvDq8ikWAM");  // Rachel — professional, clear
-        assistant.add("voice", voice);
-
-        // Transcriber
-        JsonObject transcriber = new JsonObject();
-        transcriber.addProperty("provider", "deepgram");
-        transcriber.addProperty("model",    "nova-2");
-        transcriber.addProperty("language", "en");
-        assistant.add("transcriber", transcriber);
-
-        // Model — Gemini via OpenAI-compatible or Vapi native
-        JsonObject model = new JsonObject();
-        model.addProperty("provider", "google");
-        model.addProperty("model",    "gemini-1.5-flash");
         assistant.add("model", model);
 
         return assistant;
