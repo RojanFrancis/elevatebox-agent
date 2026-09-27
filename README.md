@@ -36,7 +36,7 @@ After the call ends, a follow-up WhatsApp goes out that actually references what
 | What | How |
 |------|-----|
 | Voice calling | Vapi + Twilio — outbound, India routing, Cartesia Sindhu voice
-STT	Soniox RT v5 — Indian English, 1.8% WER |
+                 STT	Soniox RT v5 — Indian English, 1.8% WER |
 | AI brain | GPT-4.1 (conversation) + Gemini Flash (classification, follow-up, callback extraction) |
 | WhatsApp | Meta WhatsApp Cloud API — mid-call and post-call |
 | Backend | Java 21, Spring Boot 3.3.4 |
