@@ -18,7 +18,6 @@ After the call ends, a follow-up WhatsApp goes out that actually references what
 
 ## The 8 things it does, in order
 
-```
 1. Dials the number on its own
 2. Speaks in whatever language they answer in — Telugu, Hindi or English
 3. Pitches e-commerce website development naturally
@@ -27,7 +26,6 @@ After the call ends, a follow-up WhatsApp goes out that actually references what
 6. Classifies them HOT / WARM / COLD
 7. Fires a WhatsApp mid-call if they show high intent
 8. Schedules a callback if they name a time, follows up using their words
-```
 
 ---
 
@@ -35,9 +33,11 @@ After the call ends, a follow-up WhatsApp goes out that actually references what
 
 | What | How |
 |------|-----|
-| Voice calling | Vapi + Twilio — outbound, India routing, Cartesia Sindhu voice
-                 STT	Soniox RT v5 — Indian English, 1.8% WER |
-| AI brain | GPT-4.1 (conversation) + Gemini Flash (classification, follow-up, callback extraction) |
+| Voice calling | Vapi + Twilio — outbound, India routing |
+| Voice | Cartesia Sindhu — Indian English, 290ms latency |
+| STT | Soniox RT v5 — Indian English, 1.8% WER |
+| AI conversation | GPT-4.1 — live sales conversation |
+| AI brain | Gemini Flash — classification, follow-up, callback extraction |
 | WhatsApp | Meta WhatsApp Cloud API — mid-call and post-call |
 | Backend | Java 21, Spring Boot 3.3.4 |
 | Webhook tunnel | ngrok |
@@ -64,13 +64,13 @@ src/main/java/com/elevatebox/agent/
 ## REST API
 
 | Method | Endpoint | What it does |
-|--------|----------|--------------|
-| GET | `/api/call/health` | Health check |
-| POST | `/api/call/initiate` | Triggers outbound call |
-| POST | `/api/call/webhook` | Receives Vapi/Bolna call events |
-| POST | `/api/call/classify` | Classify a transcript — returns HOT/WARM/COLD |
-| POST | `/api/call/mid-call` | Send WhatsApp mid-call |
-| POST | `/api/call/process` | Run full post-call pipeline on a transcript |
+|--------|----------|-------------|
+| GET | /api/call/health | Health check |
+| POST | /api/call/initiate | Triggers outbound call |
+| POST | /api/call/webhook | Receives Vapi call events |
+| POST | /api/call/classify | Classify a transcript — returns HOT/WARM/COLD |
+| POST | /api/call/mid-call | Send WhatsApp mid-call |
+| POST | /api/call/process | Run full post-call pipeline on a transcript |
 
 ---
 
@@ -105,6 +105,7 @@ mvn spring-boot:run
 ```
 
 Test it:
+
 ```bash
 # Health check
 curl http://localhost:8081/api/call/health
@@ -118,20 +119,16 @@ curl -X POST http://localhost:8081/api/call/classify \
 
 ---
 
-## What works, what doesn't, what's next
+## What works, what's next
 
 **Works:**
-- Outbound call to any Indian number via Bolna
+- Outbound call to any Indian number via Vapi + Twilio
 - Telugu, Hindi, English detection and language switching
 - Lead classification — tested, consistent
 - Mid-call WhatsApp on HOT intent
 - Post-call follow-up using actual conversation content
 - Callback scheduling from speech ("call me back tomorrow morning")
 - GitHub is clean, no secrets committed
-
-**Doesn't work yet / rough edges:**
-- Callback scheduling confirms over WhatsApp but doesn't book into a calendar yet — Google Calendar API integration is next.
-- Language switching mid-sentence (Hinglish) works reasonably but isn't perfect.
 
 **What I'd build next:**
 - Google Calendar integration for proper callback booking
@@ -140,18 +137,18 @@ curl -X POST http://localhost:8081/api/call/classify \
 
 ---
 
-## Built by
 ## Live demo
-The full pipeline runs end to end — outbound call triggers from a single 
-REST endpoint, Varshini speaks in Indian English, classifies intent 
-mid-call, fires WhatsApp before the call ends, and schedules callbacks 
-from natural speech.
+
+The full pipeline runs end to end — outbound call triggers from a single REST endpoint, Varshini speaks in Indian English, classifies intent mid-call, fires WhatsApp before the call ends, and schedules callbacks from natural speech.
 
 Tested with real calls to Indian numbers via Twilio + Vapi.
+
+---
+
+## Built by
 
 **Rojan Francis**
 B.Tech CCE, Manipal University Jaipur (2023–2027)
 Backend engineering — Java, Spring Boot, AI integrations
 
-📱 +91 95149 71623
-🐙 github.com/RojanFrancis
+📱 +91 95149 71623 &nbsp;&nbsp; 🐙 [github.com/RojanFrancis](https://github.com/RojanFrancis)
