@@ -35,8 +35,9 @@ After the call ends, a follow-up WhatsApp goes out that actually references what
 
 | What | How |
 |------|-----|
-| Voice calling | Bolna AI — India routing, ElevenLabs voice, Deepgram transcription |
-| AI brain | Google Gemini 3.6 Flash — classification, follow-up generation, callback extraction |
+| Voice calling | Vapi + Twilio — outbound, India routing, Cartesia Sindhu voice
+STT	Soniox RT v5 — Indian English, 1.8% WER |
+| AI brain | GPT-4.1 (conversation) + Gemini Flash (classification, follow-up, callback extraction) |
 | WhatsApp | Meta WhatsApp Cloud API — mid-call and post-call |
 | Backend | Java 21, Spring Boot 3.3.4 |
 | Webhook tunnel | ngrok |
@@ -129,8 +130,7 @@ curl -X POST http://localhost:8081/api/call/classify \
 - GitHub is clean, no secrets committed
 
 **Doesn't work yet / rough edges:**
-- Bolna webhook integration with Spring Boot backend is manual right now — the WhatsApp fires from Bolna's side, not from our backend mid-call trigger. Getting them fully wired together is the next thing.
-- Callback scheduling confirms over WhatsApp but doesn't book into a calendar yet — that's a Google Calendar API integration away.
+- Callback scheduling confirms over WhatsApp but doesn't book into a calendar yet — Google Calendar API integration is next.
 - Language switching mid-sentence (Hinglish) works reasonably but isn't perfect.
 
 **What I'd build next:**
@@ -141,6 +141,13 @@ curl -X POST http://localhost:8081/api/call/classify \
 ---
 
 ## Built by
+## Live demo
+The full pipeline runs end to end — outbound call triggers from a single 
+REST endpoint, Varshini speaks in Indian English, classifies intent 
+mid-call, fires WhatsApp before the call ends, and schedules callbacks 
+from natural speech.
+
+Tested with real calls to Indian numbers via Twilio + Vapi.
 
 **Rojan Francis**
 B.Tech CCE, Manipal University Jaipur (2023–2027)
