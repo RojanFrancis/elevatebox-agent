@@ -41,6 +41,14 @@ public class VapiService {
      * Initiates an outbound call to the target number via Vapi.
      * Returns the Vapi call object JSON as a String.
      */
+    /**
+ * Initiates an outbound call to the target phone number via Vapi API.
+ * Builds the call payload with assistant config and customer details,
+ * then sends it to the Vapi /call/phone endpoint.
+ *
+ * @return Vapi API response as JSON string containing call ID and status
+ * @throws RuntimeException if Vapi API returns an error response
+ */
     public String initiateCall() {
         JsonObject body = buildCallPayload();
         log.info("Initiating Vapi outbound call to {}", TARGET_PHONE);
@@ -67,6 +75,13 @@ public class VapiService {
     /**
      * Fetches call details by callId — useful for polling status or retrieving transcript.
      */
+    /**
+ * Fetches call details by callId from Vapi API.
+ * Useful for polling call status or retrieving transcript after call ends.
+ *
+ * @param callId the unique Vapi call identifier
+ * @return Vapi call details as JSON string
+ */
     public String getCall(String callId) {
         return webClient.get()
                 .uri("/call/" + callId)
