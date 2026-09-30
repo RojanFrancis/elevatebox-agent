@@ -14,13 +14,15 @@ public class LeadClassifierService {
     private final FollowUpService      followUpService;
     private final CallbackService      callbackService;
 
+
     /**
-     * Full post-call pipeline:
-     * 1. Classify lead HOT/WARM/COLD
-     * 2. Send post-call WhatsApp with context + resume + number + build image
-     * 3. Check if callback was requested → send confirmation
-     */
-    public LeadResult processPostCall(String transcript) {
+    * Orchestrates the full post-call pipeline after a call ends.
+    * Steps: classify lead → send follow-up WhatsApp → schedule callback → persist.
+    *
+    * @param transcript the full call transcript as a string
+    * @return LeadResult containing classification, callback info, and WhatsApp status
+    */
+        public LeadResult processPostCall(String transcript) {
         log.info("Starting post-call pipeline...");
 
         // Step 1: classify
@@ -46,8 +48,13 @@ public class LeadClassifierService {
         return result;
     }
 
-    /**
+        /**
      * Mid-call pipeline — triggered by HOT intent keywords during live call.
+     * Classifies the partial transcript and fires WhatsApp only if HOT intent detected.
+     * Fires at most once per call to avoid duplicate messages.
+     *
+     * @param partialTranscript partial transcript accumulated during the live call
+     * @return WhatsApp message SID if sent, or "NOT_HOT_INTENT" if skipped
      */
     public String processMidCall(String partialTranscript) {
         log.info("Processing mid-call WhatsApp trigger...");
