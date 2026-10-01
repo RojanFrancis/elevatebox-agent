@@ -10,6 +10,21 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.regex.Pattern;
 
+/**
+ * Handles callback scheduling for leads who ask to be called back later.
+ *
+ * <p>Two responsibilities:
+ * <ol>
+ *   <li>Extract a callback time from a call transcript by asking Gemini to
+ *       turn natural speech ("call me tomorrow morning") into a concrete
+ *       date-time.</li>
+ *   <li>Send the lead a WhatsApp message confirming that callback time.</li>
+ * </ol>
+ *
+ * <p>Used in the post-call pipeline after a lead is classified (typically
+ * WARM). Depends on {@link GeminiService} for time extraction and
+ * {@link WhatsAppService} for the confirmation message.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -21,8 +36,22 @@ public class CallbackService {
     // ─── Callback Scheduling from Speech ─────────────────────────────────────
 
     /**
-     * Extract callback time from transcript using Gemini
-     * e.g. "call me back tomorrow morning" → "2026-09-13 10:00"
+     * Extracts a callback time from a call transcript using Gemini.
+     *
+     * <p>The prompt includes the current date and time so relative phrases like
+     * "tomorrow" or "Monday morning" resolve to an absolute date-time, e.g.
+     * "call me back tomorrow morning" becomes "2026-09-13 10:00". Gemini is told
+     * to reply with JSON only; any markdown code fences around the reply are
+     * stripped before parsing.
+     *
+     * <p>This method never throws. If Gemini finds no callback time, or its
+     * response cannot be parsed, it returns a result with {@code found = false}
+     * and null time fields.
+     *
+     * @param transcript the full call transcript to search for a callback request
+     * @return a {@link CallbackResult} with {@code found = true} and the
+     *         extracted times, or {@code found = false} if none was found or
+     *         parsing failed
      */
     public CallbackResult scheduleCallback(String transcript) {
         log.info("Extracting callback time from transcript...");
@@ -63,7 +92,13 @@ public class CallbackService {
     }
 
     /**
-     * Send a callback confirmation WhatsApp
+     * Sends a WhatsApp message confirming the callback time to the lead.
+     *
+     * <p>The message is sent through {@link WhatsAppService#sendPostCallMessage(String)}.
+     *
+     * @param callbackHuman the callback time in plain language, as returned in
+     *                      {@link CallbackResult#humanReadable()} (e.g. "tomorrow
+     *                      morning at 10 AM")
      */
     public void sendCallbackConfirmation(String callbackHuman) {
         String message = "Hi! Just confirming — I'll call you back " + callbackHuman + ". " +
@@ -73,5 +108,14 @@ public class CallbackService {
         log.info("Callback confirmation sent for: {}", callbackHuman);
     }
 
+    /**
+     * Result of a callback time extraction.
+     *
+     * @param found         whether a callback time was found in the transcript
+     * @param datetime      the extracted time as {@code yyyy-MM-dd HH:mm}, or
+     *                      null if {@code found} is false
+     * @param humanReadable the time in plain language (e.g. "tomorrow morning at
+     *                      10 AM"), or null if {@code found} is false
+     */
     public record CallbackResult(boolean found, String datetime, String humanReadable) {}
 }
