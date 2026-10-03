@@ -34,3 +34,6 @@ build/
 application.yaml
 application.yml
 **/.DS_Store
+
+.env
+callbacks.jsonl
