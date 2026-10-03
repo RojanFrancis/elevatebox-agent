@@ -13,7 +13,8 @@ import reactor.core.publisher.Mono;
 public class VapiService {
 
     private static final String VAPI_BASE_URL = "https://api.vapi.ai";
-    private static final String TARGET_PHONE   = "+918688664337";
+    @Value("${vapi.target-phone}")
+    private String targetPhone;
 
     @Value("${vapi.private-key}")
     private String vapiPrivateKey;
@@ -51,7 +52,7 @@ public class VapiService {
  */
     public String initiateCall() {
         JsonObject body = buildCallPayload();
-        log.info("Initiating Vapi outbound call to {}", TARGET_PHONE);
+        log.info("Initiating Vapi outbound call to {}", targetPhone);
 
         String response = webClient.post()
                 .uri("/call/phone")
@@ -119,7 +120,7 @@ public class VapiService {
 
     private JsonObject buildCustomer() {
         JsonObject customer = new JsonObject();
-        customer.addProperty("number", TARGET_PHONE);
+        customer.addProperty("number", targetPhone);
         customer.addProperty("name",   "ElevateBox Lead");
         return customer;
     }

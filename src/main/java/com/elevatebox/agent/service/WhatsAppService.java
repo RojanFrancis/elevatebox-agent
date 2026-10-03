@@ -24,8 +24,9 @@ import java.net.http.HttpResponse;
  * opted in, and free-form text is only delivered inside Meta's 24-hour window. A
  * recipient who has not opted in will not receive the message.
  *
- * <p>Credentials come from configuration ({@code meta.whatsapp.token} and
- * {@code meta.whatsapp.phone-number-id}) and are never hard-coded.
+ * <p>Credentials and the recipient number come from configuration
+ * ({@code meta.whatsapp.token}, {@code meta.whatsapp.phone-number-id} and
+ * {@code meta.whatsapp.target-phone}) and are never hard-coded.
  *
  * <p>Every send method returns the WhatsApp message ID and throws a
  * {@link RuntimeException} on failure; nothing is retried here.
@@ -36,13 +37,15 @@ public class WhatsAppService {
 
     /**
      * Recipient of all lead-facing messages (pre-call, mid-call and post-call) and the
-     * lead number printed in sales-team reports.
+     * lead number printed in sales-team reports. Read from the
+     * {@code meta.whatsapp.target-phone} property (environment variable
+     * {@code WHATSAPP_targetPhone}); there is deliberately no default.
      *
-     * <p>Currently a hard-coded, verified test recipient, because the Meta sandbox only
-     * delivers to opted-in numbers. Before production this should come from
-     * configuration or from the lead being called.
+     * <p>Until the app is live this should be a verified test number, because the Meta
+     * sandbox only delivers to opted-in numbers.
      */
-    private static final String TARGET_PHONE = "+919514971623";
+    @Value("${meta.whatsapp.target-phone}")
+    private String targetPhone;
 
     /** Meta access token, read from the {@code meta.whatsapp.token} property. */
     @Value("${meta.whatsapp.token}")
@@ -76,8 +79,8 @@ public class WhatsAppService {
     public String sendPreCallMessage() {
         String body = "Hi! 👋 This is ElevateBox. We're about to give you a quick call in a few minutes. "
                 + "Looking forward to connecting with you!";
-        log.info("Sending pre-call WhatsApp to {}", TARGET_PHONE);
-        return sendMessage(TARGET_PHONE, body);
+        log.info("Sending pre-call WhatsApp to {}", targetPhone);
+        return sendMessage(targetPhone, body);
     }
 
     /**
@@ -88,8 +91,8 @@ public class WhatsAppService {
      * @throws RuntimeException if the send fails (see {@link #sendMessage(String, String)})
      */
     public String sendMidCallMessage(String messageBody) {
-        log.info("Sending mid-call WhatsApp to {}", TARGET_PHONE);
-        return sendMessage(TARGET_PHONE, messageBody);
+        log.info("Sending mid-call WhatsApp to {}", targetPhone);
+        return sendMessage(targetPhone, messageBody);
     }
 
     /**
@@ -101,8 +104,8 @@ public class WhatsAppService {
      * @throws RuntimeException if the send fails (see {@link #sendMessage(String, String)})
      */
     public String sendPostCallMessage(String messageBody) {
-        log.info("Sending post-call WhatsApp to {}", TARGET_PHONE);
-        return sendMessage(TARGET_PHONE, messageBody);
+        log.info("Sending post-call WhatsApp to {}", targetPhone);
+        return sendMessage(targetPhone, messageBody);
     }
 
     /**
@@ -123,7 +126,7 @@ public class WhatsAppService {
                 + "Lead: %s\n"
                 + "Classification: %s %s\n\n"
                 + "Summary:\n%s",
-                TARGET_PHONE,
+                targetPhone,
                 classificationEmoji(classification),
                 classification.name(),
                 summary);
