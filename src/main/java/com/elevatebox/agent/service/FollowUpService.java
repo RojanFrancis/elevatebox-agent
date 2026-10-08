@@ -5,6 +5,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+/**
+ * Sends the personalised WhatsApp follow-up right after a voice call ends.
+ *
+ * <p>Flow: the call transcript goes to {@link GeminiService}, which writes a short,
+ * human-sounding recap of what the lead said (what they sell, budget, timeline, features
+ * they asked about). That recap is then wrapped in a message whose tone and call-to-action
+ * depend on the lead's classification (HOT, WARM or COLD), signed with the agent's contact
+ * details, and delivered through {@link WhatsAppService}.
+ *
+ * <p>The sender's name, phone number, resume link and architecture link are configurable
+ * through the {@code agent.*} properties and fall back to defaults when not set.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -13,28 +25,37 @@ public class FollowUpService {
     private final GeminiService geminiService;
     private final WhatsAppService whatsAppService;
 
-    // Your details — go into the post-call WhatsApp
+    /** Sender name shown in the "About me" block. Property: {@code agent.name}. */
     @Value("${agent.name:Rojan Francis}")
     private String agentName;
 
+    /** Sender phone number shown in the message. Property: {@code agent.phone}. */
     @Value("${agent.phone:+919514971623}")
     private String agentPhone;
 
+    /** Link to the sender's resume or profile. Property: {@code agent.resume-link}. */
     @Value("${agent.resume-link:https://github.com/RojanFrancis}")
     private String resumeLink;
 
+    /** Link explaining how the system was built. Property: {@code agent.build-image-url}. */
     @Value("${agent.build-image-url:https://github.com/RojanFrancis/elevatebox-agent}")
     private String buildImageUrl;
 
     // ─── Post-call WhatsApp with all 4 required things ───────────────────────
 
     /**
-     * Section 06 of assignment — send WhatsApp with:
-     * 1. Context of the call (what they said, budget, timeline, features)
-     * 2. Proper framing (written like a person, not a log)
-     * 3. Your mobile number
-     * 4. Image of how you built it (architecture link)
-     * + Your resume
+     * Builds and sends the post-call WhatsApp message (Section 06 of the assignment).
+     *
+     * <p>The message contains:
+     * <ol>
+     *   <li>Context of the call, generated from the real conversation</li>
+     *   <li>Human framing, written like a person rather than a log</li>
+     *   <li>The sender's mobile number</li>
+     *   <li>A link to how the system was built, plus the sender's resume</li>
+     * </ol>
+     *
+     * @param transcript     full transcript of the finished call, used to generate the recap
+     * @param classification lead temperature, which decides the emoji and the next-step text
      */
     public void sendPostCallFollowUp(String transcript,
                                      GeminiService.LeadClassification classification) {
@@ -52,6 +73,15 @@ public class FollowUpService {
 
     // ─── Private helpers ──────────────────────────────────────────────────────
 
+    /**
+     * Asks Gemini to turn the raw transcript into a short, conversational recap.
+     *
+     * <p>The prompt asks for 3-4 sentences covering what the lead sells, budget,
+     * timeline and requested features, written as a person would after a real call.
+     *
+     * @param transcript full call transcript
+     * @return the generated recap paragraph
+     */
     private String generateCallContext(String transcript) {
         String prompt = "You just finished a sales call. Write a brief follow-up context paragraph " +
                 "(3-4 sentences) based on this transcript.\n\n" +
@@ -64,6 +94,17 @@ public class FollowUpService {
         return geminiService.callGemini(prompt);
     }
 
+    /**
+     * Assembles the final WhatsApp text from the recap, a classification-based next step,
+     * and the sender's details.
+     *
+     * <p>Classification mapping: HOT proposes a 30-minute call, WARM promises a follow-up,
+     * COLD keeps it low-pressure and offers a portfolio.
+     *
+     * @param context        recap paragraph from {@link #generateCallContext(String)}
+     * @param classification lead temperature used to pick the emoji and next step
+     * @return the formatted message, ready to send
+     */
     private String buildFollowUpMessage(String context,
                                         GeminiService.LeadClassification classification) {
         String emoji = switch (classification) {
