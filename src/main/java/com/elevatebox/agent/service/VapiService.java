@@ -1,35 +1,40 @@
 package com.elevatebox.agent.service;
 
+import com.elevatebox.agent.util.Logs;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
+
 @Slf4j
 @Service
 public class VapiService {
 
     private static final String VAPI_BASE_URL = "https://api.vapi.ai";
+    private static final Duration TIMEOUT = Duration.ofSeconds(20);
+
     @Value("${vapi.target-phone}")
     private String targetPhone;
 
     @Value("${vapi.private-key}")
     private String vapiPrivateKey;
 
+    /**
+     * ID of the phone number imported into Vapi (Dashboard → Phone Numbers).
+     * Vapi already holds the Twilio credentials for it, so none are sent per call.
+     */
+    @Value("${vapi.phone-number-id}")
+    private String phoneNumberId;
+
+    /** Optional ID of a saved Vapi assistant; when blank the inline assistant below is used. */
     @Value("${vapi.assistant-id:}")
-    private String assistantId;     
-    
-    @Value("${twilio.account-sid}")
-    private String twilioAccountSid;
-
-    @Value("${twilio.auth-token}")
-    private String twilioAuthToken;
-
-    @Value("${twilio.phone-number:+17372508034}")
-    private String twilioPhoneNumber;// optional — set in yml if you have a pre-built assistant
+    private String assistantId;
 
     private final WebClient webClient;
     private final Gson gson = new Gson();
@@ -52,7 +57,7 @@ public class VapiService {
  */
     public String initiateCall() {
         JsonObject body = buildCallPayload();
-        log.info("Initiating Vapi outbound call to {}", targetPhone);
+        log.info("Initiating Vapi outbound call to {}", Logs.maskPhone(targetPhone));
 
         String response = webClient.post()
                 .uri("/call/phone")
@@ -67,8 +72,8 @@ public class VapiService {
                                     return Mono.error(new RuntimeException("Vapi error: " + err));
                                 }))
                 .bodyToMono(String.class)
-                .doOnNext(res -> log.info("Vapi call created: {}", res))
-                .block();
+                .doOnNext(res -> log.info("Vapi call created: id={}", extractCallId(res)))
+                .block(TIMEOUT);
 
         return response;
     }
@@ -89,8 +94,8 @@ public class VapiService {
                 .header("Authorization", "Bearer " + vapiPrivateKey)
                 .retrieve()
                 .bodyToMono(String.class)
-                .doOnNext(res -> log.info("Vapi call details for {}: {}", callId, res))
-                .block();
+                .doOnNext(res -> log.info("Fetched Vapi call details for {}", callId))
+                .block(TIMEOUT);
     }
 
     // ─── Private helpers ────────────────────────────────────────────────────────
@@ -98,13 +103,8 @@ public class VapiService {
     private JsonObject buildCallPayload() {
         JsonObject payload = new JsonObject();
 
-        // Phone number — Twilio credentials passed directly to Vapi
-        // Vapi will use Twilio to make the outbound call
-        JsonObject phoneNumber = new JsonObject();
-        phoneNumber.addProperty("twilioPhoneNumber",  twilioPhoneNumber);
-        phoneNumber.addProperty("twilioAccountSid",   twilioAccountSid);
-        phoneNumber.addProperty("twilioAuthToken",    twilioAuthToken);
-        payload.add("phoneNumber", phoneNumber);
+        // The number to call FROM: an imported Twilio number that Vapi already has credentials for
+        payload.addProperty("phoneNumberId", phoneNumberId);
 
         payload.add("customer", buildCustomer());
 
@@ -116,6 +116,15 @@ public class VapiService {
         }
 
         return payload;
+    }
+
+    /** Reads the call ID out of a Vapi response so logs never need to contain the full body. */
+    private String extractCallId(String responseJson) {
+        try {
+            return JsonParser.parseString(responseJson).getAsJsonObject().get("id").getAsString();
+        } catch (Exception e) {
+            return "unknown";
+        }
     }
 
     private JsonObject buildCustomer() {

@@ -60,7 +60,8 @@ public class CallController {
      */
     @PostMapping("/webhook")
     public ResponseEntity<String> vapiWebhook(@RequestBody String payload) {
-        log.info("Vapi webhook received: {}", payload.substring(0, Math.min(200, payload.length())));
+        // Never log the body: it carries transcripts and phone numbers
+        log.info("Vapi webhook received ({} bytes)", payload.length());
 
         try {
             com.google.gson.JsonObject event = com.google.gson.JsonParser

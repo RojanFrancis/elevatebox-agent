@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.time.Duration;
+
 /**
  * Thin client around Google's Gemini {@code generateContent} REST API.
  *
@@ -27,6 +29,7 @@ public class GeminiService {
 
     private static final String GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
     private static final String MODEL = "gemini-3.6-flash";
+    private static final Duration TIMEOUT = Duration.ofSeconds(30);
 
     /** Gemini API key, injected from the {@code gemini.api-key} property. */
     @Value("${gemini.api-key}")
@@ -135,9 +138,9 @@ public class GeminiService {
      * endpoint and returns the model's text reply.
      *
      * <p>The request uses temperature 0.3 (for consistent output) and a cap of
-     * 512 output tokens. The API key is passed as a query parameter on the
-     * request URL. The call blocks until the response arrives; no timeout or
-     * retry is configured here.
+     * 512 output tokens. The API key is sent in the {@code x-goog-api-key}
+     * header, never in the URL, so it cannot end up in access logs or error
+     * messages. The call blocks for at most 30 seconds; no retry is configured here.
      *
      * <p>Only the first part of the first candidate is returned, trimmed. If
      * the response cannot be parsed (for example, no candidates were returned),
@@ -150,13 +153,14 @@ public class GeminiService {
      *                          (the response body is logged and included in the message)
      */
     public String callGemini(String prompt) {
-        String uri = String.format("/v1beta/models/%s:generateContent?key=%s", MODEL, geminiApiKey);
+        String uri = String.format("/v1beta/models/%s:generateContent", MODEL);
 
         JsonObject requestBody = buildRequestBody(prompt);
         log.debug("Calling Gemini with prompt length: {}", prompt.length());
 
         String response = webClient.post()
                 .uri(uri)
+                .header("x-goog-api-key", geminiApiKey)
                 .header("Content-Type", "application/json")
                 .bodyValue(requestBody.toString())
                 .retrieve()
@@ -168,7 +172,7 @@ public class GeminiService {
                                             new RuntimeException("Gemini error: " + err));
                                 }))
                 .bodyToMono(String.class)
-                .block();
+                .block(TIMEOUT);
 
         return extractText(response);
     }
