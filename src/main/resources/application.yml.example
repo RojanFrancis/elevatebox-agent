@@ -1,28 +1,39 @@
+# Copy to application.yml (git-ignored). Every secret comes from an environment variable,
+# so this file is just the mapping and is safe to commit. See .env.example for the list.
 server:
   port: 8081
 
 spring:
   application:
     name: elevatebox-agent
+  codec:
+    max-in-memory-size: 10MB
+
+app:
+  api-key: ${APP_API_KEY}                  # callers send this as X-API-Key
 
 vapi:
-  private-key: YOUR_VAPI_PRIVATE_KEY
-  assistant-id:   # optional
+  private-key: ${VAPI_PRIVATE_KEY}
+  phone-number-id: ${VAPI_PHONE_NUMBER_ID} # Vapi dashboard -> Phone Numbers -> ID
+  assistant-id: ${VAPI_ASSISTANT_ID:}      # optional; blank uses the inline assistant
+  target-phone: ${VAPI_TARGET_PHONE}       # E.164, the number the agent dials
+  webhook-secret: ${VAPI_WEBHOOK_SECRET}   # same value as the Vapi Server URL credential
 
 gemini:
-  api-key: YOUR_GEMINI_API_KEY
-
-elevenlabs:
-  api-key: YOUR_ELEVENLABS_API_KEY
+  api-key: ${GEMINI_API_KEY}
 
 meta:
   whatsapp:
-    phone-number-id: YOUR_META_PHONE_NUMBER_ID
-    token: YOUR_META_ACCESS_TOKEN
+    token: ${META_WHATSAPP_TOKEN}
+    phone-number-id: ${META_PHONE_NUMBER_ID}
+    target-phone: ${WHATSAPP_TARGET_PHONE}
 
-spring.codec:
-  max-in-memory-size: 10MB
+agent:
+  name: ${AGENT_NAME:Rojan Francis}
+  phone: ${AGENT_PHONE}                    # shown in the post-call WhatsApp; no default on purpose
+  resume-link: ${AGENT_RESUME_LINK:https://github.com/RojanFrancis}
+  build-image-url: ${AGENT_BUILD_IMAGE_URL:https://github.com/RojanFrancis/elevatebox-agent}
 
 logging:
   level:
-    com.elevatebox: DEBUG
+    com.elevatebox: INFO

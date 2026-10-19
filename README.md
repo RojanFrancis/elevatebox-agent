@@ -72,6 +72,8 @@ src/main/java/com/elevatebox/agent/
 | POST | /api/call/mid-call | Send WhatsApp mid-call |
 | POST | /api/call/process | Run full post-call pipeline on a transcript |
 
+**Auth:** every endpoint except `/health` is protected. Your own calls send `X-API-Key`. `/webhook` is called by Vapi and checks a separate shared secret (`X-Vapi-Secret` or a Bearer token), so one leaked key never exposes both.
+
 ---
 
 ## How classification works
@@ -98,20 +100,27 @@ Real people don't say "I am a HOT lead." They say things like "my brother handle
 
 ```bash
 git clone https://github.com/RojanFrancis/elevatebox-agent.git
-cd elevatebox-agent/agent
+cd elevatebox-agent
+cp .env.example .env                       # fill in the values
 cp src/main/resources/application.yml.example src/main/resources/application.yml
-# fill in your keys
-mvn spring-boot:run
+set -a; source .env; set +a
+./mvnw spring-boot:run
 ```
+
+Generate the two service secrets with `openssl rand -hex 32` (once for `APP_API_KEY`, once for `VAPI_WEBHOOK_SECRET`).
 
 Test it:
 
 ```bash
-# Health check
+# Health check (the only open endpoint)
 curl http://localhost:8081/api/call/health
+
+# Without the key, every other endpoint returns 401
+curl -i -X POST http://localhost:8081/api/call/classify
 
 # Test classification without a real call
 curl -X POST http://localhost:8081/api/call/classify \
+  -H "X-API-Key: $APP_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"transcript": "Yes I am interested, what is the pricing? I want to start this week."}'
 # returns {"classification":"HOT"}
