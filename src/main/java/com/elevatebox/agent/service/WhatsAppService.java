@@ -1,5 +1,6 @@
 package com.elevatebox.agent.service;
 
+import com.elevatebox.agent.util.Logs;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import jakarta.annotation.PostConstruct;
@@ -39,7 +40,7 @@ public class WhatsAppService {
      * Recipient of all lead-facing messages (pre-call, mid-call and post-call) and the
      * lead number printed in sales-team reports. Read from the
      * {@code meta.whatsapp.target-phone} property (environment variable
-     * {@code WHATSAPP_targetPhone}); there is deliberately no default.
+     * {@code WHATSAPP_TARGET_PHONE}); there is deliberately no default.
      *
      * <p>Until the app is live this should be a verified test number, because the Meta
      * sandbox only delivers to opted-in numbers.
@@ -79,7 +80,7 @@ public class WhatsAppService {
     public String sendPreCallMessage() {
         String body = "Hi! 👋 This is ElevateBox. We're about to give you a quick call in a few minutes. "
                 + "Looking forward to connecting with you!";
-        log.info("Sending pre-call WhatsApp to {}", targetPhone);
+        log.info("Sending pre-call WhatsApp to {}", Logs.maskPhone(targetPhone));
         return sendMessage(targetPhone, body);
     }
 
@@ -91,7 +92,7 @@ public class WhatsAppService {
      * @throws RuntimeException if the send fails (see {@link #sendMessage(String, String)})
      */
     public String sendMidCallMessage(String messageBody) {
-        log.info("Sending mid-call WhatsApp to {}", targetPhone);
+        log.info("Sending mid-call WhatsApp to {}", Logs.maskPhone(targetPhone));
         return sendMessage(targetPhone, messageBody);
     }
 
@@ -104,7 +105,7 @@ public class WhatsAppService {
      * @throws RuntimeException if the send fails (see {@link #sendMessage(String, String)})
      */
     public String sendPostCallMessage(String messageBody) {
-        log.info("Sending post-call WhatsApp to {}", targetPhone);
+        log.info("Sending post-call WhatsApp to {}", Logs.maskPhone(targetPhone));
         return sendMessage(targetPhone, messageBody);
     }
 
@@ -130,7 +131,7 @@ public class WhatsAppService {
                 classificationEmoji(classification),
                 classification.name(),
                 summary);
-        log.info("Notifying sales team at {} — lead is {}", salesTeamNumber, classification);
+        log.info("Notifying sales team at {} — lead is {}", Logs.maskPhone(salesTeamNumber), classification);
         return sendMessage(salesTeamNumber, body);
     }
 
@@ -193,7 +194,7 @@ public class WhatsAppService {
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Failed to send WhatsApp to {}: {}", toNumber, e.getMessage(), e);
+            log.error("Failed to send WhatsApp to {}: {}", Logs.maskPhone(toNumber), e.getMessage(), e);
             throw new RuntimeException("WhatsApp send failed: " + e.getMessage(), e);
         }
     }

@@ -43,7 +43,7 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- HTTP Client for Vapi, Gemini, Twilio, ElevenLabs -->
+        <!-- HTTP client for Vapi and Gemini -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
@@ -54,13 +54,6 @@
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
             <version>2.10.1</version>
-        </dependency>
-
-        <!-- Twilio SDK for WhatsApp -->
-        <dependency>
-            <groupId>com.twilio.sdk</groupId>
-            <artifactId>twilio</artifactId>
-            <version>9.14.0</version>
         </dependency>
 
         <!-- Test -->

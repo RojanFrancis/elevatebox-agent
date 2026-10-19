@@ -15,7 +15,8 @@ import org.springframework.stereotype.Service;
  * details, and delivered through {@link WhatsAppService}.
  *
  * <p>The sender's name, phone number, resume link and architecture link are configurable
- * through the {@code agent.*} properties and fall back to defaults when not set.
+ * through the {@code agent.*} properties. The phone number is required and has no default,
+ * so no personal number is baked into the code; the other values fall back to public links.
  */
 @Slf4j
 @Service
@@ -29,8 +30,8 @@ public class FollowUpService {
     @Value("${agent.name:Rojan Francis}")
     private String agentName;
 
-    /** Sender phone number shown in the message. Property: {@code agent.phone}. */
-    @Value("${agent.phone:+919514971623}")
+    /** Sender phone number shown in the message. Property: {@code agent.phone} (required). */
+    @Value("${agent.phone}")
     private String agentPhone;
 
     /** Link to the sender's resume or profile. Property: {@code agent.resume-link}. */
