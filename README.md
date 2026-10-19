@@ -68,7 +68,7 @@ src/main/java/com/elevatebox/agent/
 | GET | /api/call/health | Health check |
 | POST | /api/call/initiate | Triggers outbound call |
 | POST | /api/call/webhook | Receives Vapi call events |
-| POST | /api/call/classify | Classify a transcript — returns HOT/WARM/COLD |
+| POST | /api/call/classify | Classify a transcript — returns the label (HOT/WARM/COLD/UNKNOWN) and a one-line reason |
 | POST | /api/call/mid-call | Send WhatsApp mid-call |
 | POST | /api/call/process | Run full post-call pipeline on a transcript |
 
@@ -93,6 +93,15 @@ COLD — curious but no real intent
 ```
 
 Real people don't say "I am a HOT lead." They say things like "my brother handles this" or "how soon can you start." The prompt is built to read that.
+
+Gemini is asked for structured JSON (`classification` plus a one-sentence `reason`), not a free-text word. If the reply is empty, cut off or unclear, the lead is labelled **UNKNOWN**, never silently COLD, so a model hiccup can't write off a real buyer. UNKNOWN leads get a neutral follow-up instead of a sales push.
+
+### Reliability
+
+- The webhook acknowledges Vapi immediately and does the work on a small background pool; a repeated delivery for the same call is ignored.
+- Gemini calls retry twice with backoff on 429/5xx and time out after 45 seconds.
+- Every post-call step is independent: if the WhatsApp send fails, the summary and callback detection still run, and the response lists which steps failed.
+- The mid-call WhatsApp fires at most once per call, only from the lead's own finished sentences.
 
 ---
 
@@ -123,7 +132,7 @@ curl -X POST http://localhost:8081/api/call/classify \
   -H "X-API-Key: $APP_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"transcript": "Yes I am interested, what is the pricing? I want to start this week."}'
-# returns {"classification":"HOT"}
+# returns {"classification":"HOT","reason":"..."}
 ```
 
 ---
