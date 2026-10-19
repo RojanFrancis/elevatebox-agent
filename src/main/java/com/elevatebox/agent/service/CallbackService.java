@@ -1,14 +1,15 @@
 package com.elevatebox.agent.service;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.regex.Pattern;
 
 /**
  * Handles callback scheduling for leads who ask to be called back later.
@@ -29,6 +30,10 @@ import java.util.regex.Pattern;
 @Service
 @RequiredArgsConstructor
 public class CallbackService {
+
+    /** Leads are in India, so "tomorrow" and "10 AM" are resolved on India time, not the server's clock. */
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+    private static final JsonObject CALLBACK_SCHEMA = buildCallbackSchema();
 
     private final WhatsAppService whatsAppService;
     private final GeminiService geminiService;
@@ -57,7 +62,7 @@ public class CallbackService {
         log.info("Extracting callback time from transcript...");
 
         String prompt = "Extract a callback time from this sales call transcript.\n\n" +
-                "Today is " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("EEEE, dd MMM yyyy HH:mm")) + ".\n\n" +
+                "Today is " + ZonedDateTime.now(IST).format(DateTimeFormatter.ofPattern("EEEE, dd MMM yyyy HH:mm")) + " (India Standard Time).\n\n" +
                 "Transcript:\n" + transcript + "\n\n" +
                 "If the person mentioned a callback time (e.g. 'call me back tomorrow', 'evening is fine', " +
                 "'call me Monday morning'), extract it and return ONLY a JSON like this:\n" +
@@ -66,8 +71,8 @@ public class CallbackService {
                 "{\"found\": false}\n\n" +
                 "Return ONLY the JSON, nothing else.";
 
-        String response = geminiService.callGemini(prompt);
-        log.info("Callback extraction response: {}", response);
+        String response = geminiService.callGeminiJson(prompt, CALLBACK_SCHEMA);
+        log.debug("Callback extraction response: {}", response);
 
         try {
             // Clean response
@@ -89,6 +94,29 @@ public class CallbackService {
             log.error("Failed to parse callback response: {}", e.getMessage());
             return new CallbackResult(false, null, null);
         }
+    }
+
+    private static JsonObject buildCallbackSchema() {
+        JsonObject found = new JsonObject();
+        found.addProperty("type", "BOOLEAN");
+        JsonObject datetime = new JsonObject();
+        datetime.addProperty("type", "STRING");
+        JsonObject human = new JsonObject();
+        human.addProperty("type", "STRING");
+
+        JsonObject properties = new JsonObject();
+        properties.add("found", found);
+        properties.add("datetime", datetime);
+        properties.add("human", human);
+
+        JsonArray required = new JsonArray();
+        required.add("found");
+
+        JsonObject schema = new JsonObject();
+        schema.addProperty("type", "OBJECT");
+        schema.add("properties", properties);
+        schema.add("required", required);
+        return schema;
     }
 
     /**

@@ -210,6 +210,7 @@ public class WhatsAppService {
             case HOT  -> "🔥";
             case WARM -> "🌡️";
             case COLD -> "❄️";
+            case UNKNOWN -> "❔";
         };
     }
 }

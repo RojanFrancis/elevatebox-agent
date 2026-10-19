@@ -64,6 +64,9 @@ public class FollowUpService {
 
         // Generate personalised context from the actual conversation
         String context = generateCallContext(transcript);
+        if (context == null || context.isBlank()) {
+            context = "Thanks for taking my call just now. It was good to hear about your business.";
+        }
 
         // Build the full WhatsApp message
         String message = buildFollowUpMessage(context, classification);
@@ -112,12 +115,14 @@ public class FollowUpService {
             case HOT  -> "🔥";
             case WARM -> "🌡️";
             case COLD -> "💙";
+            case UNKNOWN -> "🙂";
         };
 
         String nextStep = switch (classification) {
             case HOT  -> "I'd love to get started on a proposal for you. Can we schedule a quick 30-minute call?";
             case WARM -> "I'll follow up with you soon. Feel free to reach out anytime with questions.";
             case COLD -> "No pressure at all. I'll send you our portfolio in case it's useful down the line.";
+            case UNKNOWN -> "Thanks for your time. I'll follow up soon, and feel free to reach out anytime with questions.";
         };
 
         return String.format(

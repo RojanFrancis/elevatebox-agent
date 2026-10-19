@@ -1,12 +1,21 @@
 package com.elevatebox.agent.controller;
 
-import com.elevatebox.agent.service.*;
+import com.elevatebox.agent.service.CallStateStore;
+import com.elevatebox.agent.service.GeminiService;
+import com.elevatebox.agent.service.LeadClassifierService;
+import com.elevatebox.agent.service.VapiService;
+import com.elevatebox.agent.service.WhatsAppService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.regex.Pattern;
 
 @Slf4j
 @RestController
@@ -14,10 +23,15 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CallController {
 
+    /** Phrases that make a live utterance worth checking for a mid-call WhatsApp. */
+    private static final Pattern MID_CALL_TRIGGER = Pattern.compile(
+            "send me|more info|whatsapp|pric(e|ing)|brochure|portfolio", Pattern.CASE_INSENSITIVE);
+
     private final VapiService            vapiService;
-    private final GeminiService          geminiService;
     private final WhatsAppService        whatsAppService;
     private final LeadClassifierService  leadClassifierService;
+    private final CallStateStore         callState;
+    private final ThreadPoolTaskExecutor webhookExecutor;
 
     // ─── 1. Trigger outbound call ─────────────────────────────────────────────
 
@@ -26,6 +40,7 @@ public class CallController {
      * Kicks off the entire flow:
      *   1. (Optional) send pre-call WhatsApp
      *   2. Initiate Vapi outbound call
+     * Returns only the Vapi call ID, not Vapi's full response.
      */
     @PostMapping("/initiate")
     public ResponseEntity<Map<String, Object>> initiateCall(
@@ -38,11 +53,11 @@ public class CallController {
             preSid = whatsAppService.sendPreCallMessage();
         }
 
-        String vapiResponse = vapiService.initiateCall();
+        String callId = vapiService.initiateCall();
 
         return ResponseEntity.ok(Map.of(
                 "status",          "CALL_INITIATED",
-                "vapiResponse",    vapiResponse,
+                "callId",          callId,
                 "preCallMsgSid",   preSid != null ? preSid : "not_sent"
         ));
     }
@@ -51,37 +66,45 @@ public class CallController {
 
     /**
      * POST /api/call/webhook
-     * Vapi sends call events here. Handle end-of-call transcript for post-processing.
+     * Vapi sends call events here. The webhook only parses, de-duplicates and queues the work,
+     * then answers straight away; classification and WhatsApp sends run on a background pool.
      *
-     * Vapi event types you care about:
-     *   - call.started
-     *   - call.ended  ← this one carries the transcript
-     *   - transcript  ← real-time transcript chunks (for mid-call triggers)
+     * <ul>
+     *   <li>{@code end-of-call-report}: runs the post-call pipeline once per call. A repeated
+     *       delivery for the same call ID is acknowledged and ignored.</li>
+     *   <li>final {@code transcript} events: build up the live transcript; a user utterance that
+     *       matches {@link #MID_CALL_TRIGGER} triggers the mid-call check, at most once per call
+     *       and never for the assistant's own words or partial updates.</li>
+     * </ul>
+     *
+     * Answers 400 for a body that is not a JSON object, and 503 if the work queue is full so
+     * that Vapi retries.
      */
     @PostMapping("/webhook")
     public ResponseEntity<String> vapiWebhook(@RequestBody String payload) {
-        // Never log the body: it carries transcripts and phone numbers
         log.info("Vapi webhook received ({} bytes)", payload.length());
 
+        VapiEvent event;
         try {
-            com.google.gson.JsonObject event = com.google.gson.JsonParser
-                    .parseString(payload).getAsJsonObject();
-
-            String type = event.has("type")
-                    ? event.get("type").getAsString()
-                    : event.has("message") ? event.getAsJsonObject("message").get("type").getAsString() : "";
-
-            switch (type) {
-                case "call.ended", "end-of-call-report" -> handleCallEnded(event);
-                case "transcript"                        -> handleTranscript(event);
-                default                                  -> log.debug("Unhandled Vapi event: {}", type);
-            }
-
-        } catch (Exception e) {
-            log.error("Error processing Vapi webhook: {}", e.getMessage(), e);
+            event = VapiEvent.parse(payload);
+        } catch (RuntimeException e) {
+            log.warn("Rejecting webhook body that is not a JSON object");
+            return ResponseEntity.badRequest().body("BAD_PAYLOAD");
         }
 
-        // Vapi expects 200 quickly — always ack
+        log.info("Vapi event: type={} callId={}", event.type(), event.callId());
+        try {
+            if (event.isEndOfCall()) {
+                return handleCallEnded(event);
+            }
+            if (event.isFinalTranscript()) {
+                handleTranscript(event);
+            } else {
+                log.debug("Ignoring Vapi event: {}", event.type());
+            }
+        } catch (RuntimeException e) {
+            log.error("Error handling Vapi webhook: {}", e.getMessage(), e);
+        }
         return ResponseEntity.ok("OK");
     }
 
@@ -103,8 +126,7 @@ public class CallController {
         }
 
         log.info("Manual post-call processing triggered");
-        LeadClassifierService.LeadResult result = leadClassifierService.processPostCall(transcript);
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(leadClassifierService.processPostCall(transcript));
     }
 
     // ─── 4. Mid-call WhatsApp trigger ─────────────────────────────────────────
@@ -112,7 +134,7 @@ public class CallController {
     /**
      * POST /api/call/mid-call
      * Body: { "transcript": "..." }
-     * Send a contextual WhatsApp while the call is still live.
+     * Send a contextual WhatsApp while the call is still live, if the lead is HOT.
      */
     @PostMapping("/mid-call")
     public ResponseEntity<Map<String, String>> midCallMessage(
@@ -123,8 +145,10 @@ public class CallController {
             return ResponseEntity.badRequest().build();
         }
 
-        String sid = leadClassifierService.processMidCall(transcript);
-        return ResponseEntity.ok(Map.of("status", "SENT", "messageSid", sid));
+        Optional<String> sid = leadClassifierService.processMidCall(transcript);
+        return ResponseEntity.ok(Map.of(
+                "status",     sid.isPresent() ? "SENT" : "SKIPPED_NOT_HOT",
+                "messageSid", sid.orElse("none")));
     }
 
     // ─── 5. Quick classify ────────────────────────────────────────────────────
@@ -132,7 +156,7 @@ public class CallController {
     /**
      * POST /api/call/classify
      * Body: { "transcript": "..." }
-     * Returns HOT/WARM/COLD with no side effects.
+     * Returns the classification (HOT/WARM/COLD/UNKNOWN) and the reason, with no side effects.
      */
     @PostMapping("/classify")
     public ResponseEntity<Map<String, String>> classifyLead(
@@ -143,8 +167,10 @@ public class CallController {
             return ResponseEntity.badRequest().build();
         }
 
-        GeminiService.LeadClassification result = leadClassifierService.quickClassify(transcript);
-        return ResponseEntity.ok(Map.of("classification", result.name()));
+        GeminiService.ClassificationResult result = leadClassifierService.quickClassify(transcript);
+        return ResponseEntity.ok(Map.of(
+                "classification", result.label().name(),
+                "reason",         result.reason()));
     }
 
     // ─── 6. Health check ─────────────────────────────────────────────────────
@@ -156,58 +182,73 @@ public class CallController {
 
     // ─── Private event handlers ───────────────────────────────────────────────
 
-    private void handleCallEnded(com.google.gson.JsonObject event) {
-        log.info("Call ended — extracting transcript for post-processing");
+    private ResponseEntity<String> handleCallEnded(VapiEvent event) {
+        String transcript = event.endOfCallTranscript();
+        String callId = event.callId();
+
+        if (transcript == null || transcript.isBlank()) {
+            log.warn("Call ended but transcript was empty (callId={})", callId);
+            return ResponseEntity.ok("OK");
+        }
+        if (callId != null && !callState.markProcessed(callId)) {
+            log.info("Duplicate end-of-call report for call {}, ignoring", callId);
+            return ResponseEntity.ok("DUPLICATE");
+        }
+
         try {
-            // Vapi's end-of-call-report has transcript under different paths
-            String transcript = extractTranscript(event);
-            if (transcript != null && !transcript.isBlank()) {
-                leadClassifierService.processPostCall(transcript);
-            } else {
-                log.warn("Call ended but transcript was empty");
+            webhookExecutor.execute(() -> runPostCall(callId, transcript));
+        } catch (RejectedExecutionException e) {
+            log.error("Webhook queue full, asking Vapi to retry (callId={})", callId);
+            if (callId != null) {
+                callState.clearProcessed(callId);
             }
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body("BUSY");
+        }
+        return ResponseEntity.ok("OK");
+    }
+
+    private void runPostCall(String callId, String transcript) {
+        try {
+            leadClassifierService.processPostCall(transcript);
         } catch (Exception e) {
-            log.error("Error in handleCallEnded: {}", e.getMessage(), e);
+            log.error("Post-call pipeline crashed (callId={}): {}", callId, e.getMessage(), e);
         }
     }
 
-    private void handleTranscript(com.google.gson.JsonObject event) {
-        // Real-time transcript — you could use this to trigger mid-call messages
-        // based on keywords e.g. if prospect says "send me more info"
-        try {
-            String text = "";
-            if (event.has("transcript")) {
-                text = event.get("transcript").getAsString();
-            } else if (event.has("message")) {
-                var msg = event.getAsJsonObject("message");
-                if (msg.has("transcript")) text = msg.get("transcript").getAsString();
-            }
+    private void handleTranscript(VapiEvent event) {
+        String callId = event.callId();
+        String text = event.transcript();
+        if (callId == null || text == null || text.isBlank()) {
+            return;
+        }
 
-            // Keyword trigger — e.g. send brochure if prospect asks
-            if (text.toLowerCase().contains("send me") || text.toLowerCase().contains("more info")) {
-                log.info("Mid-call keyword detected — triggering WhatsApp");
-                leadClassifierService.processMidCall(text);
-            }
-        } catch (Exception e) {
-            log.error("Error in handleTranscript: {}", e.getMessage(), e);
+        callState.appendLine(callId, event.role(), text);
+
+        // Only the lead's own words can trigger it, and only once per call
+        if (!"user".equals(event.role()) || !MID_CALL_TRIGGER.matcher(text).find()) {
+            return;
+        }
+        if (!callState.tryStartMidCall(callId)) {
+            return;
+        }
+
+        String transcriptSoFar = callState.transcript(callId);
+        try {
+            webhookExecutor.execute(() -> runMidCall(callId, transcriptSoFar));
+        } catch (RejectedExecutionException e) {
+            callState.finishMidCall(callId, false);
+            log.warn("Webhook queue full, skipping mid-call check (callId={})", callId);
         }
     }
 
-    private String extractTranscript(com.google.gson.JsonObject event) {
-        // Try common Vapi response paths
-        if (event.has("transcript"))     return event.get("transcript").getAsString();
-        if (event.has("call")) {
-            var call = event.getAsJsonObject("call");
-            if (call.has("transcript")) return call.get("transcript").getAsString();
+    private void runMidCall(String callId, String transcriptSoFar) {
+        boolean sent = false;
+        try {
+            sent = leadClassifierService.processMidCall(transcriptSoFar).isPresent();
+        } catch (Exception e) {
+            log.error("Mid-call WhatsApp failed (callId={}): {}", callId, e.getMessage());
+        } finally {
+            callState.finishMidCall(callId, sent);
         }
-        if (event.has("message")) {
-            var msg = event.getAsJsonObject("message");
-            if (msg.has("transcript")) return msg.get("transcript").getAsString();
-            if (msg.has("call")) {
-                var call = msg.getAsJsonObject("call");
-                if (call.has("transcript")) return call.get("transcript").getAsString();
-            }
-        }
-        return null;
     }
 }

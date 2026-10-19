@@ -45,14 +45,14 @@ public class VapiService {
 
     /**
      * Initiates an outbound call to the target number via Vapi.
-     * Returns the Vapi call object JSON as a String.
+     * Returns the ID of the created Vapi call.
      */
     /**
  * Initiates an outbound call to the target phone number via Vapi API.
  * Builds the call payload with assistant config and customer details,
  * then sends it to the Vapi /call/phone endpoint.
  *
- * @return Vapi API response as JSON string containing call ID and status
+ * @return the ID of the created Vapi call, or "unknown" if the response had none
  * @throws RuntimeException if Vapi API returns an error response
  */
     public String initiateCall() {
@@ -75,7 +75,7 @@ public class VapiService {
                 .doOnNext(res -> log.info("Vapi call created: id={}", extractCallId(res)))
                 .block(TIMEOUT);
 
-        return response;
+        return extractCallId(response);
     }
 
     /**
