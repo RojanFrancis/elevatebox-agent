@@ -21,6 +21,7 @@ vapi:
 
 gemini:
   api-key: ${GEMINI_API_KEY}
+  model: ${GEMINI_MODEL:gemini-3.6-flash}   # change without recompiling
 
 meta:
   whatsapp:
@@ -33,6 +34,7 @@ agent:
   phone: ${AGENT_PHONE}                    # shown in the post-call WhatsApp; no default on purpose
   resume-link: ${AGENT_RESUME_LINK:https://github.com/RojanFrancis}
   build-image-url: ${AGENT_BUILD_IMAGE_URL:https://github.com/RojanFrancis/elevatebox-agent}
+  brochure-url: ${AGENT_BROCHURE_URL:https://github.com/RojanFrancis/elevatebox-agent}  # link sent in the mid-call WhatsApp
 
 logging:
   level:
