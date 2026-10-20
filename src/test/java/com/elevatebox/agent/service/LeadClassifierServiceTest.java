@@ -29,19 +29,22 @@ class LeadClassifierServiceTest {
         followUp = mock(FollowUpService.class);
         callback = mock(CallbackService.class);
         service = new LeadClassifierService(gemini, whatsApp, followUp, callback, BROCHURE);
-        when(gemini.summarizeConversation(any())).thenReturn("a summary");
     }
 
-    private void classifiedAs(GeminiService.LeadClassification label) {
-        when(gemini.classifyLead(any())).thenReturn(new GeminiService.ClassificationResult(label, "because"));
+    private static CallAnalysis analysis(GeminiService.LeadClassification label, String recap,
+                                         boolean callbackRequested, String callbackWhen) {
+        return new CallAnalysis(label, "because", "a summary", recap, callbackRequested, callbackWhen);
+    }
+
+    private void analysisIs(CallAnalysis analysis) {
+        when(gemini.analyzeCall(any())).thenReturn(analysis);
     }
 
     // ---- post-call pipeline ----
 
     @Test
-    void happyPathHasNoFailures() {
-        classifiedAs(HOT);
-        when(callback.scheduleCallback(any())).thenReturn(new CallbackService.CallbackResult(false, null, null));
+    void happyPathUsesOneGeminiCallAndHasNoFailures() {
+        analysisIs(analysis(HOT, "recap text", false, ""));
 
         var result = service.processPostCall("transcript");
 
@@ -49,61 +52,75 @@ class LeadClassifierServiceTest {
         assertEquals("because", result.reason());
         assertEquals("a summary", result.summary());
         assertTrue(result.failedSteps().isEmpty());
-        verify(followUp).sendPostCallFollowUp("transcript", HOT);
+        verify(gemini, times(1)).analyzeCall("transcript");
+        verify(followUp).sendPostCallFollowUp("recap text", HOT);
+        verify(callback, never()).sendCallbackConfirmation(any());
+        verifyNoMoreInteractions(gemini);
     }
 
     @Test
-    void aFailedWhatsAppSendDoesNotStopTheRestOfThePipeline() {
-        classifiedAs(HOT);
-        doThrow(new RuntimeException("meta down")).when(followUp).sendPostCallFollowUp(any(), any());
-        when(callback.scheduleCallback(any()))
-                .thenReturn(new CallbackService.CallbackResult(true, "2026-10-20 10:00", "tomorrow at 10 AM"));
+    void callbackRequestFromAnInterestedLeadIsConfirmed() {
+        analysisIs(analysis(WARM, "recap", true, "tomorrow at 10 AM"));
 
         var result = service.processPostCall("transcript");
 
-        assertEquals(List.of("follow-up"), result.failedSteps());
         assertTrue(result.callbackRequested());
         assertEquals("tomorrow at 10 AM", result.callbackTime());
-        assertEquals("a summary", result.summary());
         verify(callback).sendCallbackConfirmation("tomorrow at 10 AM");
     }
 
     @Test
-    void classificationOutageGivesUnknownNotCold() {
-        when(gemini.classifyLead(any())).thenThrow(new RuntimeException("503"));
+    void coldLeadsAreNotSentCallbackConfirmations() {
+        analysisIs(analysis(COLD, "recap", true, "never"));
 
         var result = service.processPostCall("transcript");
 
-        assertEquals(UNKNOWN, result.classification());
-        assertEquals(List.of("classification"), result.failedSteps());
-        verify(followUp).sendPostCallFollowUp("transcript", UNKNOWN);
-        verify(callback, never()).scheduleCallback(any());
-    }
-
-    @Test
-    void coldLeadsAreNotAskedAboutCallbacks() {
-        classifiedAs(COLD);
-
-        service.processPostCall("transcript");
-
-        verify(callback, never()).scheduleCallback(any());
+        assertFalse(result.callbackRequested());
         verify(callback, never()).sendCallbackConfirmation(any());
     }
 
     @Test
-    void aFailedSummaryStillReturnsTheRest() {
-        classifiedAs(WARM);
-        when(callback.scheduleCallback(any())).thenReturn(new CallbackService.CallbackResult(false, null, null));
-        when(gemini.summarizeConversation(any())).thenThrow(new RuntimeException("503"));
+    void aFailedWhatsAppSendDoesNotLoseTheRestOfTheResult() {
+        analysisIs(analysis(HOT, "recap", true, "tomorrow"));
+        doThrow(new RuntimeException("meta down")).when(followUp).sendPostCallFollowUp(any(), any());
 
         var result = service.processPostCall("transcript");
 
-        assertEquals(WARM, result.classification());
-        assertEquals("", result.summary());
-        assertEquals(List.of("summary"), result.failedSteps());
+        assertEquals(List.of("follow-up"), result.failedSteps());
+        assertEquals(HOT, result.classification());
+        assertEquals("a summary", result.summary());
+        assertTrue(result.callbackRequested());
+        verify(callback).sendCallbackConfirmation("tomorrow");
+    }
+
+    @Test
+    void aFailedCallbackConfirmationIsReportedNotThrown() {
+        analysisIs(analysis(HOT, "recap", true, "tomorrow"));
+        doThrow(new RuntimeException("meta down")).when(callback).sendCallbackConfirmation(any());
+
+        var result = service.processPostCall("transcript");
+
+        assertEquals(List.of("callback-confirmation"), result.failedSteps());
+        verify(followUp).sendPostCallFollowUp("recap", HOT);
+    }
+
+    @Test
+    void geminiOutageGivesUnknownAndStillSendsAGenericFollowUp() {
+        when(gemini.analyzeCall(any())).thenThrow(new RuntimeException("429"));
+
+        var result = service.processPostCall("transcript");
+
+        assertEquals(UNKNOWN, result.classification());
+        assertEquals(List.of("analysis"), result.failedSteps());
+        verify(followUp).sendPostCallFollowUp("", UNKNOWN);
+        verify(callback, never()).sendCallbackConfirmation(any());
     }
 
     // ---- mid-call pipeline ----
+
+    private void classifiedAs(GeminiService.LeadClassification label) {
+        when(gemini.classifyLead(any())).thenReturn(new GeminiService.ClassificationResult(label, "because"));
+    }
 
     @Test
     void midCallReplacesTheLinkPlaceholder() {
