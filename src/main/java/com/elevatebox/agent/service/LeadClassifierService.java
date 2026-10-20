@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -43,11 +44,14 @@ public class LeadClassifierService {
     }
 
     /**
-     * Runs the full post-call pipeline: classify, send the follow-up WhatsApp, look for a
-     * callback request (HOT and WARM leads only), and summarise.
+     * Runs the full post-call pipeline on ONE Gemini call. A single analysis gives the
+     * classification, summary, WhatsApp recap and any callback request together, instead of four
+     * separate requests. That keeps the pipeline inside API rate limits, and one outage costs one
+     * failed step, not four.
      *
-     * <p>Never throws for a step failure. If classification fails the lead is UNKNOWN and the
-     * follow-up uses a neutral next step, so no lead is wrongly written off as cold.
+     * <p>The follow-up WhatsApp does not depend on Gemini being up: if the analysis fails, the lead
+     * is UNKNOWN and still gets a neutral thank-you. Every step is independent; failures are
+     * logged and listed in {@link LeadResult#failedSteps()}.
      *
      * @param transcript the full call transcript
      * @return the outcome, including the names of any steps that failed
@@ -56,39 +60,31 @@ public class LeadClassifierService {
         log.info("Starting post-call pipeline...");
         List<String> failures = new ArrayList<>();
 
-        // Step 1: classify (UNKNOWN if the model is unavailable or unclear)
-        GeminiService.ClassificationResult classification = stepValue("classification", failures,
-                () -> geminiService.classifyLead(transcript),
-                new GeminiService.ClassificationResult(GeminiService.LeadClassification.UNKNOWN,
-                        "classification unavailable"));
-        GeminiService.LeadClassification label = classification.label();
+        // Step 1: one Gemini call for everything (UNKNOWN if the model is unavailable or unclear)
+        CallAnalysis analysis = Objects.requireNonNullElse(
+                stepValue("analysis", failures, () -> geminiService.analyzeCall(transcript),
+                        CallAnalysis.unavailable()),
+                CallAnalysis.unavailable());
+        GeminiService.LeadClassification label = analysis.label();
         log.info("Lead classified as: {}", label);
 
-        // Step 2: personalised follow-up WhatsApp
-        stepRun("follow-up", failures, () -> followUpService.sendPostCallFollowUp(transcript, label));
+        // Step 2: personalised follow-up WhatsApp (a generic thank-you if the recap is missing)
+        stepRun("follow-up", failures,
+                () -> followUpService.sendPostCallFollowUp(analysis.followUpRecap(), label));
 
-        // Step 3: callback request, only worth acting on for interested leads
+        // Step 3: confirm a callback request, only worth doing for interested leads
         boolean callbackRequested = false;
         String callbackTime = null;
-        if (label == GeminiService.LeadClassification.HOT || label == GeminiService.LeadClassification.WARM) {
-            CallbackService.CallbackResult callback = stepValue("callback", failures,
-                    () -> callbackService.scheduleCallback(transcript),
-                    new CallbackService.CallbackResult(false, null, null));
-            if (callback != null && callback.found()) {
-                callbackRequested = true;
-                callbackTime = callback.humanReadable();
-                String when = callback.humanReadable();
-                log.info("Callback requested: {}", when);
-                stepRun("callback-confirmation", failures, () -> callbackService.sendCallbackConfirmation(when));
-            }
-        } else {
-            log.info("Skipping callback extraction for {} lead", label);
+        if (analysis.callbackRequested()
+                && (label == GeminiService.LeadClassification.HOT || label == GeminiService.LeadClassification.WARM)) {
+            callbackRequested = true;
+            callbackTime = analysis.callbackWhen();
+            String when = analysis.callbackWhen();
+            log.info("Callback requested: {}", when);
+            stepRun("callback-confirmation", failures, () -> callbackService.sendCallbackConfirmation(when));
         }
 
-        // Step 4: summary
-        String summary = stepValue("summary", failures, () -> geminiService.summarizeConversation(transcript), "");
-
-        LeadResult result = new LeadResult(label, classification.reason(), summary,
+        LeadResult result = new LeadResult(label, analysis.reason(), analysis.summary(),
                 callbackRequested, callbackTime, List.copyOf(failures));
         log.info("Post-call pipeline complete: classification={} callbackRequested={} failedSteps={}",
                 label, callbackRequested, failures);

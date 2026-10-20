@@ -56,7 +56,7 @@ public final class ClassificationParser {
         return element != null && element.isJsonPrimitive() ? element.getAsString() : null;
     }
 
-    private static GeminiService.LeadClassification toLabel(String value) {
+    static GeminiService.LeadClassification toLabel(String value) {
         if (value == null) {
             return GeminiService.LeadClassification.UNKNOWN;
         }

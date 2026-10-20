@@ -10,7 +10,7 @@ No slide deck. Just the system.
 
 A potential customer gets a call. The agent introduces itself, asks about their business, listens to what they say, and decides what to do next — all without anyone on our end doing anything.
 
-If they're clearly interested (HOT), a WhatsApp with pricing and portfolio goes out before the call ends. If they need more time (WARM), it schedules a callback for whenever they said. If they're not interested (COLD), it wraps up politely and logs it.
+If they're clearly interested (HOT), a WhatsApp with pricing and portfolio goes out before the call ends. If they need more time (WARM), it notes when they asked to be called back and confirms it by WhatsApp. If they're not interested (COLD), it wraps up politely and logs it.
 
 After the call ends, a follow-up WhatsApp goes out that actually references what they said — not a copy-paste template with their name dropped in.
 
@@ -25,7 +25,7 @@ After the call ends, a follow-up WhatsApp goes out that actually references what
 5. Understands what they actually said, including when they're vague
 6. Classifies them HOT / WARM / COLD
 7. Fires a WhatsApp mid-call if they show high intent
-8. Schedules a callback if they name a time, follows up using their words
+8. Notes a callback time if they name one and confirms it, then follows up using their words
 
 ---
 
@@ -56,7 +56,7 @@ src/main/java/com/elevatebox/agent/
     ├── WhatsAppService.java         # Meta WhatsApp Cloud API
     ├── LeadClassifierService.java   # Orchestrates the full pipeline
     ├── FollowUpService.java         # Post-call WhatsApp with context + resume + number
-    └── CallbackService.java         # Extracts callback time from speech, confirms it
+    └── CallbackService.java         # Sends the callback confirmation WhatsApp
 ```
 
 ---
@@ -99,8 +99,10 @@ Gemini is asked for structured JSON (`classification` plus a one-sentence `reaso
 ### Reliability
 
 - The webhook acknowledges Vapi immediately and does the work on a small background pool; a repeated delivery for the same call is ignored.
-- Gemini calls retry twice with backoff on 429/5xx and time out after 45 seconds.
-- Every post-call step is independent: if the WhatsApp send fails, the summary and callback detection still run, and the response lists which steps failed.
+- One Gemini call per phone call, not four: classification, summary, WhatsApp recap and callback detection come from a single structured analysis, so the pipeline stays inside API rate limits.
+- Gemini calls retry twice with backoff on 429/5xx and time out after 45 seconds. If a model keeps failing, the next one in `GEMINI_FALLBACK_MODELS` is tried.
+- The follow-up WhatsApp still goes out when Gemini is down: the lead gets a generic thank-you instead of a recap.
+- Every post-call step is independent: if the WhatsApp send fails, the analysis is still returned, and the response lists which steps failed.
 - The mid-call WhatsApp fires at most once per call, only from the lead's own finished sentences.
 
 ---
@@ -145,7 +147,7 @@ curl -X POST http://localhost:8081/api/call/classify \
 - Lead classification — tested, consistent
 - Mid-call WhatsApp on HOT intent
 - Post-call follow-up using actual conversation content
-- Callback scheduling from speech ("call me back tomorrow morning")
+- Callback requests detected from speech ("call me back tomorrow morning") and confirmed by WhatsApp; the call itself is not auto-scheduled yet
 - GitHub is clean, no secrets committed
 
 **What I'd build next:**

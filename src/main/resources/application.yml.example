@@ -22,6 +22,7 @@ vapi:
 gemini:
   api-key: ${GEMINI_API_KEY}
   model: ${GEMINI_MODEL:gemini-3.6-flash}   # change without recompiling
+  fallback-models: ${GEMINI_FALLBACK_MODELS:}   # comma-separated, tried in order if the main model fails
 
 meta:
   whatsapp:
