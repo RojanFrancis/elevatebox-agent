@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>ElevateBox leads</title>
+<style>
+  :root {
+    --ink: #12333a; --muted: #4f656a; --paper: #edf3f4; --panel: #ffffff; --line: #c9d8da;
+    --accent: #0f766e; --accent-ink: #ffffff;
+    --hot: #b8420d; --warm: #9a6a0a; --cold: #2b6cb0; --unknown: #5f6672;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e3eef0; --muted: #9db3b8; --paper: #0f1c1f; --panel: #16272b; --line: #2a4146;
+      --accent: #2dd4bf; --accent-ink: #04201c;
+      --hot: #fb923c; --warm: #fbbf24; --cold: #7db4f5; --unknown: #9ca3af;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 var(--sans); }
+  main { max-width: 1080px; margin: 0 auto; padding: 36px 20px 64px; }
+  h1 { font: 600 clamp(1.8rem, 4vw, 2.6rem)/1.1 var(--serif); margin: 0 0 8px; }
+  .lede { color: var(--muted); margin: 0 0 24px; max-width: 60ch; }
+  form { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 8px; }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  input { font: inherit; padding: 9px 12px; min-width: 18rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+  button { font: inherit; cursor: pointer; border-radius: 6px; padding: 10px 18px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  #status { min-height: 1.5em; color: var(--muted); margin: 0 0 20px; }
+  #status.error { color: var(--hot); font-weight: 600; }
+  #totals[hidden], #table[hidden] { display: none; }
+  .bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--line); margin: 8px 0; }
+  .bar span { display: block; height: 100%; }
+  .counts { color: var(--muted); margin: 0 0 28px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 640px; }
+  th { text-align: left; font-weight: 600; padding: 8px 12px 8px 0; border-bottom: 2px solid var(--line); }
+  td { vertical-align: top; padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
+  .when { white-space: nowrap; color: var(--muted); }
+  .temp { font-weight: 600; white-space: nowrap; }
+  .temp.HOT { color: var(--hot); } .temp.WARM { color: var(--warm); } .temp.COLD { color: var(--cold); } .temp.UNKNOWN { color: var(--unknown); }
+  .summary { color: var(--muted); font-size: 0.92rem; margin-top: 4px; }
+  .failed { color: var(--hot); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Analysed calls</h1>
+  <p class="lede">Every call the agent has handled, newest first. This page needs your API key. It is kept in this tab only and is never saved.</p>
+
+  <form id="form">
+    <div>
+      <label for="key">API key</label>
+      <input id="key" type="password" autocomplete="off" required>
+    </div>
+    <button type="submit">Load calls</button>
+  </form>
+  <p id="status" role="status" aria-live="polite"></p>
+
+  <section id="totals" hidden>
+    <div class="bar" id="bar" aria-hidden="true"></div>
+    <p class="counts" id="counts"></p>
+  </section>
+
+  <div class="table-wrap" id="table" hidden>
+    <table>
+      <thead><tr><th>When</th><th>Lead</th><th>What happened</th><th>Callback</th><th>Problems</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const colours = { HOT: "var(--hot)", WARM: "var(--warm)", COLD: "var(--cold)", UNKNOWN: "var(--unknown)" };
+  const names = { HOT: "hot", WARM: "warm", COLD: "cold", UNKNOWN: "unclear" };
+
+  $("form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const status = $("status");
+    status.className = "";
+    status.textContent = "Loading...";
+    try {
+      const response = await fetch("/api/leads?limit=100", { headers: { "X-API-Key": $("key").value } });
+      if (response.status === 401) { fail("That key was rejected. Check it and try again."); return; }
+      if (!response.ok) { fail("The server could not load the calls (" + response.status + ")."); return; }
+      render(await response.json());
+      status.textContent = "";
+    } catch (error) {
+      fail("Could not reach the server. Check your connection and try again.");
+    }
+  });
+
+  function fail(message) {
+    $("status").textContent = message;
+    $("status").className = "error";
+  }
+
+  function render(data) {
+    const stats = data.stats || {};
+    const bar = $("bar");
+    bar.replaceChildren();
+    const total = stats.total || 0;
+    ["HOT", "WARM", "COLD", "UNKNOWN"].forEach((label) => {
+      const count = stats[label] || 0;
+      if (!count || !total) return;
+      const part = document.createElement("span");
+      part.style.width = (count / total * 100) + "%";
+      part.style.background = colours[label];
+      bar.appendChild(part);
+    });
+    $("counts").textContent = total
+      ? total + " calls: " + ["HOT", "WARM", "COLD", "UNKNOWN"].map((l) => (stats[l] || 0) + " " + names[l]).join(", ") + "."
+      : "No calls stored yet. Run a call or POST a transcript to /api/call/process.";
+    $("totals").hidden = false;
+
+    const rows = $("rows");
+    rows.replaceChildren();
+    (data.leads || []).forEach((lead) => {
+      const tr = document.createElement("tr");
+      tr.appendChild(cell("when", new Date(lead.createdAt).toLocaleString()));
+
+      const temp = document.createElement("td");
+      temp.className = "temp " + (lead.classification || "UNKNOWN");
+      temp.textContent = names[lead.classification] || "unclear";
+      tr.appendChild(temp);
+
+      const what = document.createElement("td");
+      what.textContent = lead.reason || "";
+      if (lead.summary) {
+        const summary = document.createElement("div");
+        summary.className = "summary";
+        summary.textContent = lead.summary;
+        what.appendChild(summary);
+      }
+      tr.appendChild(what);
+
+      tr.appendChild(cell("", lead.callbackRequested ? (lead.callbackWhen || "requested") : ""));
+      tr.appendChild(cell("failed", lead.failedSteps || ""));
+      rows.appendChild(tr);
+    });
+    $("table").hidden = !(data.leads || []).length;
+  }
+
+  function cell(className, text) {
+    const td = document.createElement("td");
+    td.className = className;
+    td.textContent = text;
+    return td;
+  }
+</script>
+</body>
+</html>

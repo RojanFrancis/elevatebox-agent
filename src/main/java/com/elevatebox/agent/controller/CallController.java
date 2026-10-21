@@ -1,5 +1,6 @@
 package com.elevatebox.agent.controller;
 
+import com.elevatebox.agent.service.CallRecordService;
 import com.elevatebox.agent.service.CallStateStore;
 import com.elevatebox.agent.service.GeminiService;
 import com.elevatebox.agent.service.LeadClassifierService;
@@ -32,6 +33,7 @@ public class CallController {
     private final LeadClassifierService  leadClassifierService;
     private final CallStateStore         callState;
     private final ThreadPoolTaskExecutor webhookExecutor;
+    private final CallRecordService      callRecords;
 
     // ─── 1. Trigger outbound call ─────────────────────────────────────────────
 
@@ -126,7 +128,9 @@ public class CallController {
         }
 
         log.info("Manual post-call processing triggered");
-        return ResponseEntity.ok(leadClassifierService.processPostCall(transcript));
+        LeadClassifierService.LeadResult result = leadClassifierService.processPostCall(transcript);
+        callRecords.save(null, "manual", result);
+        return ResponseEntity.ok(result);
     }
 
     // ─── 4. Mid-call WhatsApp trigger ─────────────────────────────────────────
@@ -195,6 +199,11 @@ public class CallController {
             return ResponseEntity.ok("DUPLICATE");
         }
 
+        if (callId != null && callRecords.exists(callId)) {
+            log.info("Call {} is already stored, ignoring the repeated report", callId);
+            return ResponseEntity.ok("DUPLICATE");
+        }
+
         try {
             webhookExecutor.execute(() -> runPostCall(callId, transcript));
         } catch (RejectedExecutionException e) {
@@ -209,7 +218,8 @@ public class CallController {
 
     private void runPostCall(String callId, String transcript) {
         try {
-            leadClassifierService.processPostCall(transcript);
+            LeadClassifierService.LeadResult result = leadClassifierService.processPostCall(transcript);
+            callRecords.save(callId, "vapi", result);
         } catch (Exception e) {
             log.error("Post-call pipeline crashed (callId={}): {}", callId, e.getMessage(), e);
         }
