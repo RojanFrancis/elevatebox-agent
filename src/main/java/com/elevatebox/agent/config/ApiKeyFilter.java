@@ -14,7 +14,8 @@ import java.security.MessageDigest;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
- * Authenticates every {@code /api/**} request except the health check.
+ * Authenticates every {@code /api/**} request except the health check and the public demo
+ * analysis endpoint (which can only analyse text; see {@code DemoController}).
  *
  * <p>Two callers, two secrets, so a leak of one does not expose the other:
  * <ul>
@@ -34,6 +35,7 @@ public class ApiKeyFilter extends OncePerRequestFilter {
     static final int MIN_SECRET_LENGTH = 24;
     private static final String WEBHOOK_PATH = "/api/call/webhook";
     private static final String HEALTH_PATH  = "/api/call/health";
+    private static final String DEMO_PATH    = "/api/demo/analyze";
 
     private final byte[] apiKey;
     private final byte[] webhookSecret;
@@ -52,7 +54,7 @@ public class ApiKeyFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest req) {
         String path = req.getRequestURI();
-        return !path.startsWith("/api/") || path.equals(HEALTH_PATH);
+        return !path.startsWith("/api/") || path.equals(HEALTH_PATH) || path.equals(DEMO_PATH);
     }
 
     @Override

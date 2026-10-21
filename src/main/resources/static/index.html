@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ElevateBox call reader</title>
+<meta name="description" content="Paste a sales call transcript. ElevateBox's voice agent rates the lead, summarises the call and drafts the WhatsApp follow-up.">
+<style>
+  :root {
+    --ink: #12333a;
+    --muted: #4f656a;
+    --paper: #edf3f4;
+    --panel: #ffffff;
+    --line: #c9d8da;
+    --accent: #0f766e;
+    --accent-ink: #ffffff;
+    --hot: #b8420d;
+    --warm: #9a6a0a;
+    --cold: #2b6cb0;
+    --unknown: #5f6672;
+    --bubble: #d7f2c7;
+    --bubble-ink: #10261a;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e3eef0;
+      --muted: #9db3b8;
+      --paper: #0f1c1f;
+      --panel: #16272b;
+      --line: #2a4146;
+      --accent: #2dd4bf;
+      --accent-ink: #04201c;
+      --hot: #fb923c;
+      --warm: #fbbf24;
+      --cold: #7db4f5;
+      --unknown: #9ca3af;
+      --bubble: #1f4d2e;
+      --bubble-ink: #e6f6e0;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 16px/1.55 var(--sans);
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 40px 20px 64px; }
+  h1 {
+    font: 600 clamp(2rem, 4.6vw, 3.1rem)/1.1 var(--serif);
+    letter-spacing: -0.01em;
+    margin: 0 0 12px;
+    max-width: 18ch;
+  }
+  .lede { max-width: 56ch; color: var(--muted); margin: 0 0 32px; font-size: 1.05rem; }
+  .workspace { display: grid; gap: 28px; }
+  @media (min-width: 880px) { .workspace { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+
+  label, .field-title { display: block; font-weight: 600; margin-bottom: 8px; }
+  textarea {
+    width: 100%;
+    min-height: 300px;
+    resize: vertical;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel);
+    color: var(--ink);
+    font: 0.93rem/1.6 var(--mono);
+  }
+  textarea::placeholder { color: var(--muted); }
+  .samples { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 6px;
+    padding: 9px 14px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink);
+  }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible, textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; padding: 11px 20px; }
+  button.primary:disabled { opacity: 0.6; cursor: progress; }
+  .actions { display: flex; align-items: center; gap: 14px; margin-top: 14px; flex-wrap: wrap; }
+  #status { color: var(--muted); min-height: 1.5em; }
+  #status.error { color: var(--hot); font-weight: 600; }
+
+  .reading { min-height: 300px; }
+  .placeholder { color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; padding: 28px; }
+  #result[hidden], #empty[hidden], #callback[hidden] { display: none; }
+  .temperature { font: 600 2rem/1.1 var(--serif); margin: 0 0 12px; }
+  [data-label="HOT"] .temperature { color: var(--hot); }
+  [data-label="WARM"] .temperature { color: var(--warm); }
+  [data-label="COLD"] .temperature { color: var(--cold); }
+  [data-label="UNKNOWN"] .temperature { color: var(--unknown); }
+  .gauge { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 0 0 6px; }
+  .seg { height: 8px; border-radius: 4px; background: var(--line); }
+  [data-label="COLD"] .seg[data-level="COLD"] { background: var(--cold); }
+  [data-label="WARM"] .seg[data-level="WARM"] { background: var(--warm); }
+  [data-label="HOT"] .seg[data-level="HOT"] { background: var(--hot); }
+  .gauge-names { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; color: var(--muted); font-size: 0.85rem; margin-bottom: 20px; }
+  .reason { margin: 0 0 14px; }
+  .summary { margin: 0 0 22px; color: var(--muted); }
+  .bubble-title { font-weight: 600; margin: 0 0 8px; }
+  .bubble {
+    background: var(--bubble);
+    color: var(--bubble-ink);
+    border-radius: 14px 14px 14px 3px;
+    padding: 12px 16px;
+    max-width: 46ch;
+    white-space: pre-wrap;
+  }
+  #callback { margin: 16px 0 0; }
+  .note { color: var(--muted); font-size: 0.9rem; margin: 20px 0 0; }
+  @media (prefers-reduced-motion: no-preference) {
+    #result.fresh { animation: settle 220ms ease-out; }
+    @keyframes settle { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  }
+  footer { margin-top: 48px; color: var(--muted); font-size: 0.92rem; max-width: 70ch; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Read a sales call in seconds</h1>
+  <p class="lede">Paste a call transcript. The agent rates the lead, summarises what was said and drafts the WhatsApp message the customer would get. Nothing is sent from this page.</p>
+
+  <div class="workspace">
+    <section aria-labelledby="in-title">
+      <span id="in-title" class="field-title">Transcript</span>
+      <div class="samples" role="group" aria-label="Sample transcripts">
+        <button type="button" data-sample="ready">Ready to buy</button>
+        <button type="button" data-sample="partner">Needs a partner's approval</button>
+        <button type="button" data-sample="no">Not interested</button>
+      </div>
+      <label for="transcript" class="sr" style="position:absolute;left:-9999px">Call transcript</label>
+      <textarea id="transcript" spellcheck="false" placeholder="AI: Hi, do you have two minutes?&#10;User: ..."></textarea>
+      <div class="actions">
+        <button type="button" id="run" class="primary">Analyse call</button>
+        <span id="status" role="status" aria-live="polite"></span>
+      </div>
+    </section>
+
+    <section class="reading" aria-live="polite" aria-labelledby="out-title">
+      <span id="out-title" class="field-title">Reading</span>
+      <p id="empty" class="placeholder">The reading shows up here after you analyse a transcript. Pick a sample on the left to try it.</p>
+      <div id="result" hidden>
+        <p class="temperature" id="temperature"></p>
+        <div class="gauge" aria-hidden="true"><span class="seg" data-level="COLD"></span><span class="seg" data-level="WARM"></span><span class="seg" data-level="HOT"></span></div>
+        <div class="gauge-names" aria-hidden="true"><span>Cold</span><span>Warm</span><span>Hot</span></div>
+        <p class="reason" id="reason"></p>
+        <p class="summary" id="summary"></p>
+        <p class="bubble-title">The follow-up the customer would receive</p>
+        <div class="bubble" id="recap"></div>
+        <p id="callback" hidden></p>
+        <p class="note" id="note"></p>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    This is the analysis step of <a href="https://github.com/RojanFrancis/elevatebox-agent">ElevateBox's AI voice agent</a>, a Spring Boot service that calls leads through Vapi, classifies them with Gemini and follows up on WhatsApp. The demo allows a few requests per minute and per day.
+  </footer>
+</main>
+
+<script>
+  const samples = {
+    ready: "AI: Hi, this is Varshini from ElevateBox. Do you have two minutes?\nUser: Yes, go ahead.\nAI: We build websites for small businesses. What do you do?\nUser: I run a salon in Jaipur. I want a website where customers can book appointments.\nAI: Do you have a budget in mind?\nUser: Around 40 thousand rupees. What is the price for that, and can you start this week?\nAI: Yes, we can. Shall I send details on WhatsApp?\nUser: Please do. And call me back tomorrow morning to finalise.",
+    partner: "AI: Hi, this is Varshini from ElevateBox. Do you have two minutes?\nUser: A little, I am in the shop.\nAI: We build websites for small businesses. Do you have one?\nUser: Only an Instagram page. A website could be useful for our clinic.\nAI: What would you want it to do?\nUser: Show our doctors and take appointments. But my brother handles these decisions, and I am not sure about the budget yet.\nAI: Could I speak with him?\nUser: He is travelling this month. Maybe after Diwali.",
+    no: "AI: Hi, this is Varshini from ElevateBox. Do you have two minutes?\nUser: No. We already have a website and we are not interested.\nAI: Understood. Could I ask whether...\nUser: Please do not call again."
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const input = $("transcript");
+  const run = $("run");
+  const statusEl = $("status");
+  const titles = { HOT: "Hot lead", WARM: "Warm lead", COLD: "Cold lead", UNKNOWN: "Could not tell" };
+
+  document.querySelectorAll("[data-sample]").forEach((button) => {
+    button.addEventListener("click", () => {
+      input.value = samples[button.dataset.sample];
+      input.focus();
+    });
+  });
+  run.addEventListener("click", analyse);
+
+  function say(message, isError) {
+    statusEl.textContent = message;
+    statusEl.classList.toggle("error", Boolean(isError));
+  }
+
+  async function analyse() {
+    const transcript = input.value.trim();
+    if (!transcript) {
+      say("Paste a transcript or pick a sample first.", true);
+      return;
+    }
+    run.disabled = true;
+    say("Reading the call...", false);
+    try {
+      const response = await fetch("/api/demo/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        say(data.error || "Something went wrong. Try again in a moment.", true);
+        return;
+      }
+      show(data);
+      say("", false);
+    } catch (error) {
+      say("Could not reach the server. Check your connection and try again.", true);
+    } finally {
+      run.disabled = false;
+    }
+  }
+
+  function show(data) {
+    const label = titles[data.label] ? data.label : "UNKNOWN";
+    $("result").dataset.label = label;
+    $("temperature").textContent = titles[label];
+    $("reason").textContent = data.reason || "";
+    $("summary").textContent = data.summary || "";
+    $("recap").textContent = data.followUpRecap || "The model returned no recap for this transcript.";
+    $("note").textContent = data.note || "";
+    const callback = $("callback");
+    if (data.callbackRequested && data.callbackWhen) {
+      callback.textContent = "The customer asked for a callback: " + data.callbackWhen + ".";
+      callback.hidden = false;
+    } else {
+      callback.hidden = true;
+    }
+    $("empty").hidden = true;
+    const result = $("result");
+    result.hidden = false;
+    result.classList.remove("fresh");
+    void result.offsetWidth;
+    result.classList.add("fresh");
+  }
+</script>
+</body>
+</html>
