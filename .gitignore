@@ -31,8 +31,8 @@ build/
 
 ### VS Code ###
 .vscode/
-application.yaml
-application.yml
+application-local.yml
+application-local.yaml
 **/.DS_Store
 
 .env

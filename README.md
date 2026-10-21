@@ -1,5 +1,7 @@
 # ElevateBox AI Voice Agent 🤖📞
 
+[![CI](https://github.com/RojanFrancis/elevatebox-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/RojanFrancis/elevatebox-agent/actions/workflows/ci.yml)
+
 Built this for the ElevateBox SDE Intern assignment. The system calls a number, has a real sales conversation in Telugu, Hindi or English, figures out how serious the buyer is, and acts on it while still on the call — sends a WhatsApp, schedules a callback, follows up with what they actually said.
 
 No slide deck. Just the system.
@@ -123,7 +125,6 @@ Gemini is asked for structured JSON (`classification` plus a one-sentence `reaso
 git clone https://github.com/RojanFrancis/elevatebox-agent.git
 cd elevatebox-agent
 cp .env.example .env                       # fill in the values
-cp src/main/resources/application.yml.example src/main/resources/application.yml
 set -a; source .env; set +a
 ./mvnw spring-boot:run
 ```
@@ -146,6 +147,14 @@ curl -X POST http://localhost:8081/api/call/classify \
   -d '{"transcript": "Yes I am interested, what is the pricing? I want to start this week."}'
 # returns {"classification":"HOT","reason":"..."}
 ```
+
+---
+
+## Deploying (Render)
+
+The repo has a `Dockerfile`, so Render builds it directly: create a **Web Service** from this repo with runtime **Docker**, set the health check path to `/api/call/health`, and add the environment variables from `.env.example`. `DB_URL`, `DB_USERNAME` and `DB_PASSWORD` should point at a MySQL-compatible database such as TiDB Cloud. Render supplies `PORT`, which the app picks up.
+
+Then point the Vapi assistant's Server URL at `https://<your-service>.onrender.com/api/call/webhook` (keeping the Bearer credential), so the webhook no longer depends on a local tunnel. On Render's free tier the service sleeps when idle, so the first request after a pause is slow.
 
 ---
 
