@@ -16,3 +16,9 @@ meta:
     target-phone: "+10000000000"
 agent:
   phone: "+10000000000"
+spring:
+  datasource:
+    url: jdbc:h2:mem:elevatebox-test;DB_CLOSE_DELAY=-1
+  jpa:
+    hibernate:
+      ddl-auto: create-drop

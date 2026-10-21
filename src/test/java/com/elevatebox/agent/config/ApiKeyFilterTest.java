@@ -83,6 +83,13 @@ class ApiKeyFilterTest {
     }
 
     @Test
+    void onlyTheDemoAnalyzeRouteIsPublic() throws Exception {
+        assertTrue(call(post("/api/demo/analyze")).reachedController());
+        assertEquals(401, call(post("/api/demo/other")).status());
+        assertEquals(401, call(new MockHttpServletRequest("GET", "/api/leads")).status());
+    }
+
+    @Test
     void refusesToStartWithWeakSecrets() {
         assertThrows(IllegalStateException.class, () -> new ApiKeyFilter("short", HOOK_SECRET));
         assertThrows(IllegalStateException.class, () -> new ApiKeyFilter(API_KEY, ""));

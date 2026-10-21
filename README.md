@@ -71,8 +71,10 @@ src/main/java/com/elevatebox/agent/
 | POST | /api/call/classify | Classify a transcript — returns the label (HOT/WARM/COLD/UNKNOWN) and a one-line reason |
 | POST | /api/call/mid-call | Send WhatsApp mid-call |
 | POST | /api/call/process | Run full post-call pipeline on a transcript |
+| GET | /api/leads | Newest analysed calls plus totals per label (needs the API key) |
+| POST | /api/demo/analyze | Public: analyse a pasted transcript, nothing is sent or stored |
 
-**Auth:** every endpoint except `/health` is protected. Your own calls send `X-API-Key`. `/webhook` is called by Vapi and checks a separate shared secret (`X-Vapi-Secret` or a Bearer token), so one leaked key never exposes both.
+**Auth:** every endpoint except `/health` and the public demo route is protected. Your own calls send `X-API-Key`. `/webhook` is called by Vapi and checks a separate shared secret (`X-Vapi-Secret` or a Bearer token), so one leaked key never exposes both.
 
 ---
 
@@ -104,6 +106,14 @@ Gemini is asked for structured JSON (`classification` plus a one-sentence `reaso
 - The follow-up WhatsApp still goes out when Gemini is down: the lead gets a generic thank-you instead of a recap.
 - Every post-call step is independent: if the WhatsApp send fails, the analysis is still returned, and the response lists which steps failed.
 - The mid-call WhatsApp fires at most once per call, only from the lead's own finished sentences.
+
+---
+
+## Demo and dashboard
+
+- `/` is a public page where you paste a call transcript (or pick a sample) and see the lead rating, the summary and the WhatsApp follow-up the customer would receive. It can only analyse: it has no way to send a message, call anyone or write to the database. Limits per minute, per day and overall protect the Gemini quota.
+- `/leads.html` lists every analysed call, newest first. It asks for the API key and keeps it in the tab only.
+- Calls are stored in a database: the outcome only (rating, reason, summary, callback request, failed steps), never the transcript. Without `DB_URL` a local H2 file in `./data` is used; for TiDB Cloud or MySQL set `DB_URL`, `DB_USERNAME` and `DB_PASSWORD`. A repeated end-of-call report is ignored even after a restart.
 
 ---
 
