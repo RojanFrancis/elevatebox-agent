@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/RojanFrancis/elevatebox-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/RojanFrancis/elevatebox-agent/actions/workflows/ci.yml)
 
+**Live demo:** https://elevatebox-agent.onrender.com (paste a call transcript and see the lead rating, summary and WhatsApp follow-up). It runs on Render's free tier, so the first load after a quiet spell can take a minute.
+
 Built this for the ElevateBox SDE Intern assignment. The system calls a number, has a real sales conversation in Telugu, Hindi or English, figures out how serious the buyer is, and acts on it while still on the call — sends a WhatsApp, schedules a callback, follows up with what they actually said.
 
 No slide deck. Just the system.
@@ -31,6 +33,24 @@ After the call ends, a follow-up WhatsApp goes out that actually references what
 
 ---
 
+## How it fits together
+
+```mermaid
+flowchart LR
+    Lead(("Lead")) <-->|"voice call"| Vapi["Vapi + Twilio"]
+    Vapi -->|"webhook with Bearer secret"| API["Spring Boot service"]
+    API -->|"one structured request"| Gemini["Gemini"]
+    API -->|"recap and callback confirmation"| WA["Meta WhatsApp Cloud API"]
+    WA --> Lead
+    API --> DB[("TiDB or MySQL")]
+    Visitor(("Visitor")) -->|"paste a transcript"| Demo["Demo page"]
+    Demo --> API
+    Owner(("Owner")) -->|"API key"| Leads["Leads page"]
+    Leads --> API
+```
+
+---
+
 ## Stack
 
 | What | How |
@@ -42,7 +62,9 @@ After the call ends, a follow-up WhatsApp goes out that actually references what
 | AI brain | Gemini Flash — classification, follow-up, callback extraction |
 | WhatsApp | Meta WhatsApp Cloud API — mid-call and post-call |
 | Backend | Java 21, Spring Boot 3.3.4 |
-| Webhook tunnel | ngrok |
+| Storage | Spring Data JPA: TiDB Cloud (MySQL) in production, H2 for local runs and tests |
+| Hosting | Render (Docker); the Vapi webhook points at it directly |
+| Local webhook tunnel | ngrok, only for testing on a laptop |
 
 ---
 

@@ -45,6 +45,8 @@
   .temp.HOT { color: var(--hot); } .temp.WARM { color: var(--warm); } .temp.COLD { color: var(--cold); } .temp.UNKNOWN { color: var(--unknown); }
   .summary { color: var(--muted); font-size: 0.92rem; margin-top: 4px; }
   .failed { color: var(--hot); }
+  .warning { color: var(--hot); font-weight: 600; margin: 0 0 20px; max-width: 70ch; }
+  .warning[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -60,6 +62,7 @@
     <button type="submit">Load calls</button>
   </form>
   <p id="status" role="status" aria-live="polite"></p>
+  <p id="storage" class="warning" hidden></p>
 
   <section id="totals" hidden>
     <div class="bar" id="bar" aria-hidden="true"></div>
@@ -101,6 +104,14 @@
   }
 
   function render(data) {
+    const storage = data.storage || {};
+    const notice = $("storage");
+    if (storage.temporary) {
+      notice.textContent = "This server is using a built-in test database (" + storage.product + "). Calls saved here can disappear when it restarts. Set DB_URL to a MySQL or TiDB database to keep them.";
+      notice.hidden = false;
+    } else {
+      notice.hidden = true;
+    }
     const stats = data.stats || {};
     const bar = $("bar");
     bar.replaceChildren();
@@ -114,7 +125,7 @@
       bar.appendChild(part);
     });
     $("counts").textContent = total
-      ? total + " calls: " + ["HOT", "WARM", "COLD", "UNKNOWN"].map((l) => (stats[l] || 0) + " " + names[l]).join(", ") + "."
+      ? total + (total === 1 ? " call: " : " calls: ") + ["HOT", "WARM", "COLD", "UNKNOWN"].map((l) => (stats[l] || 0) + " " + names[l]).join(", ") + "."
       : "No calls stored yet. Run a call or POST a transcript to /api/call/process.";
     $("totals").hidden = false;
 

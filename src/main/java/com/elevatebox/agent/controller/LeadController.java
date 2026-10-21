@@ -1,6 +1,7 @@
 package com.elevatebox.agent.controller;
 
 import com.elevatebox.agent.persistence.CallRecord;
+import com.elevatebox.agent.persistence.StorageInfo;
 import com.elevatebox.agent.service.CallRecordService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * GET /api/leads returns the newest analysed calls and totals per label. It needs the API key
+ * GET /api/leads returns the newest analysed calls, totals per label and which database is in use. It needs the API key
  * like every other {@code /api} route, because the rows describe real conversations.
  */
 @RestController
@@ -22,11 +23,12 @@ import java.util.Map;
 public class LeadController {
 
     private final CallRecordService callRecords;
+    private final StorageInfo storageInfo;
 
     @GetMapping
     public Map<String, Object> leads(@RequestParam(defaultValue = "50") int limit) {
         List<LeadView> leads = callRecords.recent(limit).stream().map(LeadView::from).toList();
-        return Map.of("stats", callRecords.stats(), "leads", leads);
+        return Map.of("stats", callRecords.stats(), "leads", leads, "storage", storageInfo.describe());
     }
 
     /** What the API exposes of a stored call. */
