@@ -1,7 +1,8 @@
-# Copy to application.yml (git-ignored). Every secret comes from an environment variable,
-# so this file is just the mapping and is safe to commit. See .env.example for the list.
+# Committed on purpose: it only maps environment variables to settings, so the same file works
+# on a laptop, in CI and on Render. Never put a secret in this file. Values come from the
+# environment (see .env.example). For personal overrides use application-local.yml, which is git-ignored.
 server:
-  port: 8081
+  port: ${PORT:8081}
 
 spring:
   application:
