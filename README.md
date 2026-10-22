@@ -4,6 +4,10 @@
 
 **Live demo:** https://elevatebox-agent.onrender.com (paste a call transcript and see the lead rating, summary and WhatsApp follow-up). It runs on Render's free tier, so the first load after a quiet spell can take a minute.
 
+![The public demo page after analysing a sample call](docs/demo.png)
+
+![The leads dashboard listing analysed calls](docs/leads.png)
+
 Built this for the ElevateBox SDE Intern assignment. The system calls a number, has a real sales conversation in Telugu, Hindi or English, figures out how serious the buyer is, and acts on it while still on the call — sends a WhatsApp, schedules a callback, follows up with what they actually said.
 
 No slide deck. Just the system.
@@ -180,29 +184,28 @@ Then point the Vapi assistant's Server URL at `https://<your-service>.onrender.c
 
 ---
 
-## What works, what's next
+## Status and limits
 
-**Works:**
-- Outbound call to any Indian number via Vapi + Twilio
-- Telugu, Hindi, English detection and language switching
-- Lead classification — tested, consistent
-- Mid-call WhatsApp on HOT intent
-- Post-call follow-up using actual conversation content
-- Callback requests detected from speech ("call me back tomorrow morning") and confirmed by WhatsApp; the call itself is not auto-scheduled yet
-- GitHub is clean, no secrets committed
+**Verified on the current version (October 2026)**
+- A Vapi browser call reaches the deployed service through the Bearer-authenticated webhook; the end-of-call report is analysed once, the follow-up and callback-confirmation WhatsApps arrive, and the call is stored.
+- One structured Gemini request per call returns the rating, reason, summary, WhatsApp recap and callback request. Unclear or failed answers become UNKNOWN, transient errors are retried, and fallback models take over when a model is out of quota.
+- Calls are stored in TiDB Cloud (the outcome only, never the transcript). The leads API and page need the API key. The public demo endpoint can only analyse and is rate limited.
+- 89 automated tests run in CI on every push. The service runs from a Dockerfile on Render.
 
-**What I'd build next:**
-- Google Calendar integration for proper callback booking
-- A simple dashboard showing call history, classification breakdown, conversion rate
-- Prompt tuning based on real call transcripts — the first 20 calls will teach you more than any prompt engineering session
+**Built and unit-tested, not separately re-checked live:** the mid-call WhatsApp on hot intent (at most once per call), and the de-duplication of repeated webhooks.
 
----
+**Known limits**
+- The phone leg (Vapi with Twilio) worked in earlier versions, but the Twilio account is currently out of funds, so outbound phone calls have not been re-run since the rewrite. The browser-call path above is what was verified.
+- WhatsApp runs on Meta's test number: it only reaches registered recipients, and free-form text only inside 24 hours of their last message. A production launch would register approved message templates.
+- Callbacks are detected and confirmed by WhatsApp, but nothing schedules the call itself yet.
+- Telugu, Hindi and English handling lives in the Vapi assistant's configuration, not in this repository's tests.
+- Render's free tier sleeps when idle, so the first request after a quiet spell is slow.
 
-## Live demo
-
-The full pipeline runs end to end — outbound call triggers from a single REST endpoint, Varshini speaks in Indian English, classifies intent mid-call, fires WhatsApp before the call ends, and schedules callbacks from natural speech.
-
-Tested with real calls to Indian numbers via Twilio + Vapi.
+**What I'd build next**
+- Calendar integration so a confirmed callback is actually booked.
+- Approved WhatsApp templates for production use.
+- Database migrations (Flyway) instead of letting Hibernate create tables.
+- A conversion dashboard, and prompt tuning on real call transcripts.
 
 ---
 
