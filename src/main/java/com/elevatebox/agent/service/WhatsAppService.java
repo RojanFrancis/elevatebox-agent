@@ -12,6 +12,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 
 /**
  * Sends WhatsApp text messages through the Meta WhatsApp Cloud API (Graph API v20.0).
@@ -59,13 +60,15 @@ public class WhatsAppService {
     /** Shared HTTP client used for all calls to the Meta API; created in {@link #init()}. */
     private HttpClient httpClient;
 
+    private static final Duration SEND_TIMEOUT = Duration.ofSeconds(10);
+
     /**
      * Creates the shared {@link HttpClient} once Spring has injected the configuration,
      * and logs which sender number is in use.
      */
     @PostConstruct
     public void init() {
-        this.httpClient = HttpClient.newHttpClient();
+        this.httpClient = HttpClient.newBuilder().connectTimeout(SEND_TIMEOUT).build();
         log.info("Meta WhatsApp Cloud API initialized — Phone Number ID: {}", phoneNumberId);
     }
 
@@ -144,7 +147,8 @@ public class WhatsAppService {
      * configured sender number with the bearer token, then reads the message ID from the
      * first entry of the {@code messages} array in the response.
      *
-     * <p>This call is blocking and uses no timeout and no retry.
+     * <p>This call is blocking, gives up after {@link #SEND_TIMEOUT} and is not retried. The
+     * timeout matters for the mid-call tool, which answers while the customer is on the line.
      *
      * @param toNumber the recipient's number in international format
      * @param body     the message text
@@ -172,6 +176,7 @@ public class WhatsAppService {
                     .uri(URI.create(url))
                     .header("Authorization", "Bearer " + accessToken)
                     .header("Content-Type", "application/json")
+                    .timeout(SEND_TIMEOUT)
                     .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
                     .build();
 

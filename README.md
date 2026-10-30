@@ -32,7 +32,7 @@ After the call ends, a follow-up WhatsApp goes out that actually references what
 4. Asks about budget, products, timeline, features — one at a time
 5. Understands what they actually said, including when they're vague
 6. Classifies them HOT / WARM / COLD
-7. Fires a WhatsApp mid-call if they show high intent
+7. Sends a WhatsApp mid-call when they ask for details, and says so on the call ("I've just sent it to your WhatsApp")
 8. Notes a callback time if they name one and confirms it, then follows up using their words
 
 ---
@@ -42,7 +42,8 @@ After the call ends, a follow-up WhatsApp goes out that actually references what
 ```mermaid
 flowchart LR
     Lead(("Lead")) <-->|"voice call"| Vapi["Vapi + Twilio"]
-    Vapi -->|"webhook with Bearer secret"| API["Spring Boot service"]
+    Vapi -->|"webhook with Bearer secret: events and tool calls"| API["Spring Boot service"]
+    API -->|"tool result, read back to the caller"| Vapi
     API -->|"one structured request"| Gemini["Gemini"]
     API -->|"recap and callback confirmation"| WA["Meta WhatsApp Cloud API"]
     WA --> Lead
@@ -95,7 +96,7 @@ src/main/java/com/elevatebox/agent/
 |--------|----------|-------------|
 | GET | /api/call/health | Health check |
 | POST | /api/call/initiate | Triggers outbound call |
-| POST | /api/call/webhook | Receives Vapi call events |
+| POST | /api/call/webhook | Receives Vapi call events and answers the assistant's tool calls |
 | POST | /api/call/classify | Classify a transcript — returns the label (HOT/WARM/COLD/UNKNOWN) and a one-line reason |
 | POST | /api/call/mid-call | Send WhatsApp mid-call |
 | POST | /api/call/process | Run full post-call pipeline on a transcript |
@@ -126,6 +127,21 @@ Real people don't say "I am a HOT lead." They say things like "my brother handle
 
 Gemini is asked for structured JSON (`classification` plus a one-sentence `reason`), not a free-text word. If the reply is empty, cut off or unclear, the lead is labelled **UNKNOWN**, never silently COLD, so a model hiccup can't write off a real buyer. UNKNOWN leads get a neutral follow-up instead of a sales push.
 
+## Mid-call WhatsApp: the assistant decides
+
+The voice assistant has a `send_whatsapp` tool ([definition](src/main/resources/vapi/send-whatsapp-tool.json)). When the customer asks for pricing, examples or details, the assistant calls it with a `topic` (pricing, portfolio or details) and a one-line `note` about what the customer said:
+
+```
+Customer: "Can you send me the pricing on WhatsApp?"
+Assistant → tool call send_whatsapp {topic: "pricing", note: "Great to hear your saree shop is going online."}
+Webhook   → sends the WhatsApp, answers {"results":[{"toolCallId":"…","result":"Sent our e-commerce website packages and pricing to the customer's WhatsApp just now…"}]}
+Assistant: "Done, I've just sent our pricing to your WhatsApp. While you look, what's your timeline?"
+```
+
+- The webhook answers while the customer is on the line, so the tool never calls Gemini: the message is a fixed text per topic plus the assistant's note (one line, links and markup stripped, at most 200 characters), and the WhatsApp send times out after 10 seconds.
+- At most one mid-call WhatsApp per call. A second request is answered with "already sent, tell them to check WhatsApp"; a failed send is answered with an error, so the assistant promises the details after the call instead.
+- The inline assistant (no `VAPI_ASSISTANT_ID`) gets the tool automatically. For a saved assistant, add the JSON above under Tools in the Vapi dashboard; the tool has no server URL of its own, so calls go to the same webhook. If a saved assistant has no tool, set `AGENT_KEYWORD_MID_CALL=true` to fall back to the older keyword trigger.
+
 ### Reliability
 
 - The webhook acknowledges Vapi immediately and does the work on a small background pool; a repeated delivery for the same call is ignored.
@@ -133,7 +149,7 @@ Gemini is asked for structured JSON (`classification` plus a one-sentence `reaso
 - Gemini calls retry twice with backoff on 429/5xx and time out after 45 seconds. If a model keeps failing, the next one in `GEMINI_FALLBACK_MODELS` is tried.
 - The follow-up WhatsApp still goes out when Gemini is down: the lead gets a generic thank-you instead of a recap.
 - Every post-call step is independent: if the WhatsApp send fails, the analysis is still returned, and the response lists which steps failed.
-- The mid-call WhatsApp fires at most once per call, only from the lead's own finished sentences.
+- The mid-call WhatsApp fires at most once per call, whether the assistant's tool or the optional keyword trigger asks for it.
 
 ---
 
@@ -190,9 +206,9 @@ Then point the Vapi assistant's Server URL at `https://<your-service>.onrender.c
 - A Vapi browser call reaches the deployed service through the Bearer-authenticated webhook; the end-of-call report is analysed once, the follow-up and callback-confirmation WhatsApps arrive, and the call is stored.
 - One structured Gemini request per call returns the rating, reason, summary, WhatsApp recap and callback request. Unclear or failed answers become UNKNOWN, transient errors are retried, and fallback models take over when a model is out of quota.
 - Calls are stored in TiDB Cloud (the outcome only, never the transcript). The leads API and page need the API key. The public demo endpoint can only analyse and is rate limited.
-- 89 automated tests run in CI on every push. The service runs from a Dockerfile on Render.
+- 104 automated tests run in CI on every push. The service runs from a Dockerfile on Render.
 
-**Built and unit-tested, not separately re-checked live:** the mid-call WhatsApp on hot intent (at most once per call), and the de-duplication of repeated webhooks.
+**Built and unit-tested, not separately re-checked live:** the `send_whatsapp` tool call during a live call, the keyword fallback for the mid-call WhatsApp, and the de-duplication of repeated webhooks.
 
 **Known limits**
 - The phone leg (Vapi with Twilio) worked in earlier versions, but the Twilio account is currently out of funds, so outbound phone calls have not been re-run since the rewrite. The browser-call path above is what was verified.

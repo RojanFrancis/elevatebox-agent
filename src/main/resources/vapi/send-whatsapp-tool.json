@@ -1,0 +1,28 @@
+{
+  "type": "function",
+  "function": {
+    "name": "send_whatsapp",
+    "description": "Send the customer a WhatsApp message during the call with ElevateBox pricing, portfolio or details. Use it when the customer asks for details, pricing, examples or a WhatsApp, or shows clear buying intent. Call it at most once per call.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "enum": ["pricing", "portfolio", "details"],
+          "description": "What the customer asked for."
+        },
+        "note": {
+          "type": "string",
+          "description": "One short, friendly sentence to the customer that refers to what they told you, e.g. 'Great to hear your saree business is going online.' No links."
+        }
+      },
+      "required": ["topic"]
+    }
+  },
+  "messages": [
+    {
+      "type": "request-start",
+      "content": "Sure, sending that to your WhatsApp now."
+    }
+  ]
+}

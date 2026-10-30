@@ -1,14 +1,18 @@
 package com.elevatebox.agent.controller;
 
+import com.elevatebox.agent.service.AgentToolService;
 import com.elevatebox.agent.service.CallRecordService;
 import com.elevatebox.agent.service.CallStateStore;
 import com.elevatebox.agent.service.GeminiService;
 import com.elevatebox.agent.service.LeadClassifierService;
 import com.elevatebox.agent.service.VapiService;
 import com.elevatebox.agent.service.WhatsAppService;
-import lombok.RequiredArgsConstructor;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.bind.annotation.*;
@@ -21,7 +25,6 @@ import java.util.regex.Pattern;
 @Slf4j
 @RestController
 @RequestMapping("/api/call")
-@RequiredArgsConstructor
 public class CallController {
 
     /** Phrases that make a live utterance worth checking for a mid-call WhatsApp. */
@@ -34,6 +37,32 @@ public class CallController {
     private final CallStateStore         callState;
     private final ThreadPoolTaskExecutor webhookExecutor;
     private final CallRecordService      callRecords;
+    private final AgentToolService       agentTools;
+
+    /**
+     * True when the mid-call WhatsApp is also triggered by keywords in the live transcript. Off by
+     * default: the assistant decides through the {@code send_whatsapp} tool. Turn it on for a
+     * saved assistant that has no tools configured.
+     */
+    private final boolean keywordMidCall;
+
+    public CallController(VapiService vapiService,
+                          WhatsAppService whatsAppService,
+                          LeadClassifierService leadClassifierService,
+                          CallStateStore callState,
+                          ThreadPoolTaskExecutor webhookExecutor,
+                          CallRecordService callRecords,
+                          AgentToolService agentTools,
+                          @Value("${agent.keyword-mid-call:false}") boolean keywordMidCall) {
+        this.vapiService           = vapiService;
+        this.whatsAppService       = whatsAppService;
+        this.leadClassifierService = leadClassifierService;
+        this.callState             = callState;
+        this.webhookExecutor       = webhookExecutor;
+        this.callRecords           = callRecords;
+        this.agentTools            = agentTools;
+        this.keywordMidCall        = keywordMidCall;
+    }
 
     // ─── 1. Trigger outbound call ─────────────────────────────────────────────
 
@@ -74,9 +103,13 @@ public class CallController {
      * <ul>
      *   <li>{@code end-of-call-report}: runs the post-call pipeline once per call. A repeated
      *       delivery for the same call ID is acknowledged and ignored.</li>
-     *   <li>final {@code transcript} events: build up the live transcript; a user utterance that
-     *       matches {@link #MID_CALL_TRIGGER} triggers the mid-call check, at most once per call
-     *       and never for the assistant's own words or partial updates.</li>
+     *   <li>{@code tool-calls}: the assistant asked for a tool such as {@code send_whatsapp}. It
+     *       runs straight away and the answer is returned as {@code {"results": [...]}}, which
+     *       Vapi reads back to the assistant mid-conversation.</li>
+     *   <li>final {@code transcript} events: build up the live transcript. With
+     *       {@code agent.keyword-mid-call} on, a user utterance that matches
+     *       {@link #MID_CALL_TRIGGER} also triggers the mid-call check, at most once per call and
+     *       never for the assistant's own words or partial updates.</li>
      * </ul>
      *
      * Answers 400 for a body that is not a JSON object, and 503 if the work queue is full so
@@ -98,6 +131,9 @@ public class CallController {
         try {
             if (event.isEndOfCall()) {
                 return handleCallEnded(event);
+            }
+            if (event.isToolCalls()) {
+                return handleToolCalls(event);
             }
             if (event.isFinalTranscript()) {
                 handleTranscript(event);
@@ -186,6 +222,24 @@ public class CallController {
 
     // ─── Private event handlers ───────────────────────────────────────────────
 
+    private ResponseEntity<String> handleToolCalls(VapiEvent event) {
+        JsonArray results = new JsonArray();
+        for (VapiEvent.ToolCall call : event.toolCalls()) {
+            AgentToolService.Outcome outcome = agentTools.handle(event.callId(), call.name(), call.arguments());
+            JsonObject result = new JsonObject();
+            result.addProperty("toolCallId", call.id());
+            if (outcome.error() != null) {
+                result.addProperty("error", outcome.error());
+            } else {
+                result.addProperty("result", outcome.result());
+            }
+            results.add(result);
+        }
+        JsonObject body = new JsonObject();
+        body.add("results", results);
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(body.toString());
+    }
+
     private ResponseEntity<String> handleCallEnded(VapiEvent event) {
         String transcript = event.endOfCallTranscript();
         String callId = event.callId();
@@ -235,7 +289,7 @@ public class CallController {
         callState.appendLine(callId, event.role(), text);
 
         // Only the lead's own words can trigger it, and only once per call
-        if (!"user".equals(event.role()) || !MID_CALL_TRIGGER.matcher(text).find()) {
+        if (!keywordMidCall || !"user".equals(event.role()) || !MID_CALL_TRIGGER.matcher(text).find()) {
             return;
         }
         if (!callState.tryStartMidCall(callId)) {
