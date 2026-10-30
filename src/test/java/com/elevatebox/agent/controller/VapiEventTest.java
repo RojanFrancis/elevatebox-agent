@@ -68,6 +68,36 @@ class VapiEventTest {
     }
 
     @Test
+    void toolCallsAreParsedWithObjectArguments() {
+        VapiEvent e = VapiEvent.parse("""
+                {"message":{"type":"tool-calls","call":{"id":"call-3"},
+                 "toolCallList":[{"id":"tool-1","type":"function",
+                   "function":{"name":"send_whatsapp","arguments":{"topic":"pricing","note":"Hi"}}}]}}""");
+        assertTrue(e.isToolCalls());
+        assertEquals("call-3", e.callId());
+        assertEquals(1, e.toolCalls().size());
+        VapiEvent.ToolCall call = e.toolCalls().get(0);
+        assertEquals("tool-1", call.id());
+        assertEquals("send_whatsapp", call.name());
+        assertEquals("pricing", call.arguments().get("topic").getAsString());
+    }
+
+    @Test
+    void toolCallArgumentsMayBeAJsonString() {
+        VapiEvent e = VapiEvent.parse("""
+                {"message":{"type":"tool-calls","toolCallList":[{"id":"tool-1",
+                 "function":{"name":"send_whatsapp","arguments":"{\\"topic\\":\\"portfolio\\"}"}}]}}""");
+        assertEquals("portfolio", e.toolCalls().get(0).arguments().get("topic").getAsString());
+    }
+
+    @Test
+    void otherEventsHaveNoToolCalls() {
+        VapiEvent e = VapiEvent.parse("{\"message\":{\"type\":\"status-update\"}}");
+        assertFalse(e.isToolCalls());
+        assertTrue(e.toolCalls().isEmpty());
+    }
+
+    @Test
     void nonObjectBodyThrows() {
         assertThrows(RuntimeException.class, () -> VapiEvent.parse("[1,2,3]"));
         assertThrows(RuntimeException.class, () -> VapiEvent.parse("not json at all"));

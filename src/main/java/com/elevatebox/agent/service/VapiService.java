@@ -1,15 +1,20 @@
 package com.elevatebox.agent.service;
 
 import com.elevatebox.agent.util.Logs;
-import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.springframework.core.io.ClassPathResource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 @Slf4j
@@ -36,25 +41,22 @@ public class VapiService {
     @Value("${vapi.assistant-id:}")
     private String assistantId;
 
+    /** The send_whatsapp tool definition; paste the same JSON into a saved assistant's tools. */
+    static final String SEND_WHATSAPP_TOOL = "vapi/send-whatsapp-tool.json";
+
     private final WebClient webClient;
-    private final Gson gson = new Gson();
 
     public VapiService(WebClient.Builder builder) {
         this.webClient = builder.baseUrl(VAPI_BASE_URL).build();
     }
 
     /**
-     * Initiates an outbound call to the target number via Vapi.
-     * Returns the ID of the created Vapi call.
+     * Initiates an outbound call to the target phone number through Vapi's /call/phone endpoint,
+     * with the saved assistant if one is configured, otherwise the inline assistant.
+     *
+     * @return the ID of the created Vapi call, or "unknown" if the response had none
+     * @throws RuntimeException if the Vapi API returns an error response
      */
-    /**
- * Initiates an outbound call to the target phone number via Vapi API.
- * Builds the call payload with assistant config and customer details,
- * then sends it to the Vapi /call/phone endpoint.
- *
- * @return the ID of the created Vapi call, or "unknown" if the response had none
- * @throws RuntimeException if Vapi API returns an error response
- */
     public String initiateCall() {
         JsonObject body = buildCallPayload();
         log.info("Initiating Vapi outbound call to {}", Logs.maskPhone(targetPhone));
@@ -79,15 +81,11 @@ public class VapiService {
     }
 
     /**
-     * Fetches call details by callId — useful for polling status or retrieving transcript.
+     * Fetches call details by call ID, for polling the status or reading the transcript.
+     *
+     * @param callId the Vapi call ID
+     * @return the Vapi call details as a JSON string
      */
-    /**
- * Fetches call details by callId from Vapi API.
- * Useful for polling call status or retrieving transcript after call ends.
- *
- * @param callId the unique Vapi call identifier
- * @return Vapi call details as JSON string
- */
     public String getCall(String callId) {
         return webClient.get()
                 .uri("/call/" + callId)
@@ -152,9 +150,26 @@ public class VapiService {
                 "Your goal is to qualify leads by understanding their business needs, budget, and timeline. " +
                 "Ask open-ended questions, listen actively, and classify the lead as HOT (ready to buy), " +
                 "WARM (interested but needs nurturing), or COLD (not interested). " +
+                "When the customer asks for pricing, examples or details, or asks for a WhatsApp, call the " +
+                "send_whatsapp tool once, then tell them it is in their WhatsApp and carry on. " +
                 "Be concise, friendly, and never pushy. If the prospect is not interested, thank them politely.");
+        JsonArray tools = new JsonArray();
+        tools.add(sendWhatsAppTool());
+        model.add("tools", tools);
         assistant.add("model", model);
 
         return assistant;
+    }
+
+    /**
+     * Loads the send_whatsapp tool. It has no server URL of its own, so Vapi sends the tool call
+     * to the same webhook as every other event.
+     */
+    static JsonObject sendWhatsAppTool() {
+        try (InputStream in = new ClassPathResource(SEND_WHATSAPP_TOOL).getInputStream()) {
+            return JsonParser.parseString(new String(in.readAllBytes(), StandardCharsets.UTF_8)).getAsJsonObject();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Missing " + SEND_WHATSAPP_TOOL, e);
+        }
     }
 }

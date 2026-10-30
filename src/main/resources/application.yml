@@ -45,6 +45,7 @@ agent:
   resume-link: ${AGENT_RESUME_LINK:https://github.com/RojanFrancis}
   build-image-url: ${AGENT_BUILD_IMAGE_URL:https://github.com/RojanFrancis/elevatebox-agent}
   brochure-url: ${AGENT_BROCHURE_URL:https://github.com/RojanFrancis/elevatebox-agent}  # link sent in the mid-call WhatsApp
+  keyword-mid-call: ${AGENT_KEYWORD_MID_CALL:false}  # true: also trigger the mid-call WhatsApp from keywords, for assistants without the send_whatsapp tool
 
 demo:
   max-chars: ${DEMO_MAX_CHARS:4000}

@@ -76,6 +76,17 @@ class ApiKeyFilterTest {
     }
 
     @Test
+    void toolEndpointsUseTheWebhookSecretNotTheApiKey() throws Exception {
+        MockHttpServletRequest withSecret = post("/api/call/tools/send-whatsapp");
+        withSecret.addHeader("Authorization", "Bearer " + HOOK_SECRET);
+        assertTrue(call(withSecret).reachedController());
+
+        MockHttpServletRequest withApiKey = post("/api/call/tools/send-whatsapp");
+        withApiKey.addHeader("X-API-Key", API_KEY);
+        assertEquals(401, call(withApiKey).status());
+    }
+
+    @Test
     void apiEndpointDoesNotAcceptTheWebhookSecret() throws Exception {
         MockHttpServletRequest req = post("/api/call/initiate");
         req.addHeader("X-API-Key", HOOK_SECRET);
