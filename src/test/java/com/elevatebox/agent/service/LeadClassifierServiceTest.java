@@ -53,8 +53,8 @@ class LeadClassifierServiceTest {
         assertEquals("a summary", result.summary());
         assertTrue(result.failedSteps().isEmpty());
         verify(gemini, times(1)).analyzeCall("transcript");
-        verify(followUp).sendPostCallFollowUp("recap text", HOT);
-        verify(callback, never()).sendCallbackConfirmation(any());
+        verify(followUp).sendPostCallFollowUp("recap text", HOT, null);
+        verify(callback, never()).sendCallbackConfirmation(any(), any());
         verifyNoMoreInteractions(gemini);
     }
 
@@ -66,7 +66,7 @@ class LeadClassifierServiceTest {
 
         assertTrue(result.callbackRequested());
         assertEquals("tomorrow at 10 AM", result.callbackTime());
-        verify(callback).sendCallbackConfirmation("tomorrow at 10 AM");
+        verify(callback).sendCallbackConfirmation("tomorrow at 10 AM", null);
     }
 
     @Test
@@ -76,13 +76,13 @@ class LeadClassifierServiceTest {
         var result = service.processPostCall("transcript");
 
         assertFalse(result.callbackRequested());
-        verify(callback, never()).sendCallbackConfirmation(any());
+        verify(callback, never()).sendCallbackConfirmation(any(), any());
     }
 
     @Test
     void aFailedWhatsAppSendDoesNotLoseTheRestOfTheResult() {
         analysisIs(analysis(HOT, "recap", true, "tomorrow"));
-        doThrow(new RuntimeException("meta down")).when(followUp).sendPostCallFollowUp(any(), any());
+        doThrow(new RuntimeException("meta down")).when(followUp).sendPostCallFollowUp(any(), any(), any());
 
         var result = service.processPostCall("transcript");
 
@@ -90,18 +90,18 @@ class LeadClassifierServiceTest {
         assertEquals(HOT, result.classification());
         assertEquals("a summary", result.summary());
         assertTrue(result.callbackRequested());
-        verify(callback).sendCallbackConfirmation("tomorrow");
+        verify(callback).sendCallbackConfirmation("tomorrow", null);
     }
 
     @Test
     void aFailedCallbackConfirmationIsReportedNotThrown() {
         analysisIs(analysis(HOT, "recap", true, "tomorrow"));
-        doThrow(new RuntimeException("meta down")).when(callback).sendCallbackConfirmation(any());
+        doThrow(new RuntimeException("meta down")).when(callback).sendCallbackConfirmation(any(), any());
 
         var result = service.processPostCall("transcript");
 
         assertEquals(List.of("callback-confirmation"), result.failedSteps());
-        verify(followUp).sendPostCallFollowUp("recap", HOT);
+        verify(followUp).sendPostCallFollowUp("recap", HOT, null);
     }
 
     @Test
@@ -112,8 +112,8 @@ class LeadClassifierServiceTest {
 
         assertEquals(UNKNOWN, result.classification());
         assertEquals(List.of("analysis"), result.failedSteps());
-        verify(followUp).sendPostCallFollowUp("", UNKNOWN);
-        verify(callback, never()).sendCallbackConfirmation(any());
+        verify(followUp).sendPostCallFollowUp("", UNKNOWN, null);
+        verify(callback, never()).sendCallbackConfirmation(any(), any());
     }
 
     // ---- mid-call pipeline ----

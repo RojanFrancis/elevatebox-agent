@@ -7,6 +7,7 @@ import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class AgentToolServiceTest {
@@ -15,13 +16,15 @@ class AgentToolServiceTest {
 
     private WhatsAppService whatsApp;
     private CallStateStore callState;
+    private OptInService optIn;
     private AgentToolService tools;
 
     @BeforeEach
     void setUp() {
         whatsApp = mock(WhatsAppService.class);
         callState = new CallStateStore();
-        tools = new AgentToolService(whatsApp, callState, BROCHURE);
+        optIn = mock(OptInService.class);
+        tools = new AgentToolService(whatsApp, callState, optIn, BROCHURE);
     }
 
     private static JsonObject args(String topic, String note) {
@@ -37,12 +40,12 @@ class AgentToolServiceTest {
 
     @Test
     void sendsThePricingMessageWithTheNoteAndLink() {
-        when(whatsApp.sendMidCallMessage(any())).thenReturn("wamid.1");
+        when(whatsApp.sendMidCallMessage(any(), any())).thenReturn("wamid.1");
 
         var outcome = tools.handle("call-1", "send_whatsapp", args("pricing", "Great to hear your saree shop is going online."));
 
         ArgumentCaptor<String> message = ArgumentCaptor.forClass(String.class);
-        verify(whatsApp).sendMidCallMessage(message.capture());
+        verify(whatsApp).sendMidCallMessage(any(), message.capture());
         assertTrue(message.getValue().contains("Great to hear your saree shop is going online."));
         assertTrue(message.getValue().contains("packages and pricing"));
         assertTrue(message.getValue().endsWith(BROCHURE));
@@ -52,28 +55,28 @@ class AgentToolServiceTest {
 
     @Test
     void sendsOnlyOncePerCall() {
-        when(whatsApp.sendMidCallMessage(any())).thenReturn("wamid.1");
+        when(whatsApp.sendMidCallMessage(any(), any())).thenReturn("wamid.1");
 
         tools.handle("call-1", "send_whatsapp", args("pricing", null));
         var second = tools.handle("call-1", "send_whatsapp", args("portfolio", null));
 
-        verify(whatsApp, times(1)).sendMidCallMessage(any());
+        verify(whatsApp, times(1)).sendMidCallMessage(any(), any());
         assertTrue(second.result().contains("already sent"));
     }
 
     @Test
     void differentCallsEachGetAMessage() {
-        when(whatsApp.sendMidCallMessage(any())).thenReturn("wamid.1");
+        when(whatsApp.sendMidCallMessage(any(), any())).thenReturn("wamid.1");
 
         tools.handle("call-1", "send_whatsapp", args("pricing", null));
         tools.handle("call-2", "send_whatsapp", args("pricing", null));
 
-        verify(whatsApp, times(2)).sendMidCallMessage(any());
+        verify(whatsApp, times(2)).sendMidCallMessage(any(), any());
     }
 
     @Test
     void aFailedSendIsReportedAndCanBeRetried() {
-        when(whatsApp.sendMidCallMessage(any()))
+        when(whatsApp.sendMidCallMessage(any(), any()))
                 .thenThrow(new RuntimeException("Meta down"))
                 .thenReturn("wamid.2");
 
@@ -83,16 +86,26 @@ class AgentToolServiceTest {
         assertNull(failed.result());
         assertTrue(failed.error().contains("right after the call"));
         assertNull(retried.error());
-        verify(whatsApp, times(2)).sendMidCallMessage(any());
+        verify(whatsApp, times(2)).sendMidCallMessage(any(), any());
     }
 
     @Test
     void unknownOrMissingTopicFallsBackToDetails() {
-        when(whatsApp.sendMidCallMessage(any())).thenReturn("wamid.1");
+        when(whatsApp.sendMidCallMessage(any(), any())).thenReturn("wamid.1");
 
         tools.handle("call-1", "send_whatsapp", args("discount codes", null));
 
-        verify(whatsApp).sendMidCallMessage(contains("more about what we build"));
+        verify(whatsApp).sendMidCallMessage(any(), contains("more about what we build"));
+    }
+
+    @Test
+    void sendsToTheContactWhoAskedForTheCall() {
+        when(optIn.phoneForCall("call-1")).thenReturn(java.util.Optional.of("+919876543210"));
+        when(whatsApp.sendMidCallMessage(any(), any())).thenReturn("wamid.1");
+
+        tools.handle("call-1", "send_whatsapp", args("pricing", null));
+
+        verify(whatsApp).sendMidCallMessage(eq("+919876543210"), any());
     }
 
     @Test

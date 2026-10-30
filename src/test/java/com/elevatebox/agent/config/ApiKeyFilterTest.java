@@ -87,6 +87,13 @@ class ApiKeyFilterTest {
     }
 
     @Test
+    void whatsAppWebhookIsLeftToItsSignatureCheck() throws Exception {
+        assertTrue(call(post("/api/whatsapp/webhook")).reachedController());
+        assertTrue(call(new MockHttpServletRequest("GET", "/api/whatsapp/webhook")).reachedController());
+        assertEquals(401, call(post("/api/whatsapp/other")).status());
+    }
+
+    @Test
     void apiEndpointDoesNotAcceptTheWebhookSecret() throws Exception {
         MockHttpServletRequest req = post("/api/call/initiate");
         req.addHeader("X-API-Key", HOOK_SECRET);

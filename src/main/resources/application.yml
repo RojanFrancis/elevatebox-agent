@@ -27,6 +27,7 @@ vapi:
   assistant-id: ${VAPI_ASSISTANT_ID:}      # optional; blank uses the inline assistant
   target-phone: ${VAPI_TARGET_PHONE}       # E.164, the number the agent dials
   webhook-secret: ${VAPI_WEBHOOK_SECRET}   # same value as the Vapi Server URL credential
+  max-call-seconds: ${VAPI_MAX_CALL_SECONDS:180}  # hard limit on every outbound call
 
 gemini:
   api-key: ${GEMINI_API_KEY}
@@ -38,6 +39,8 @@ meta:
     token: ${META_WHATSAPP_TOKEN}
     phone-number-id: ${META_PHONE_NUMBER_ID}
     target-phone: ${WHATSAPP_TARGET_PHONE}
+    verify-token: ${WHATSAPP_VERIFY_TOKEN:}   # any random string; also entered in Meta's webhook settings
+    app-secret: ${META_APP_SECRET:}           # Meta app -> App settings -> Basic; signs incoming webhooks
 
 agent:
   name: ${AGENT_NAME:Rojan Francis}
@@ -46,6 +49,10 @@ agent:
   build-image-url: ${AGENT_BUILD_IMAGE_URL:https://github.com/RojanFrancis/elevatebox-agent}
   brochure-url: ${AGENT_BROCHURE_URL:https://github.com/RojanFrancis/elevatebox-agent}  # link sent in the mid-call WhatsApp
   keyword-mid-call: ${AGENT_KEYWORD_MID_CALL:false}  # true: also trigger the mid-call WhatsApp from keywords, for assistants without the send_whatsapp tool
+
+optin:
+  cooldown-hours: ${OPTIN_COOLDOWN_HOURS:24}   # call each number at most once per this many hours
+  calls-per-day: ${OPTIN_CALLS_PER_DAY:20}     # opt-in calls across everyone per UTC day
 
 demo:
   max-chars: ${DEMO_MAX_CHARS:4000}

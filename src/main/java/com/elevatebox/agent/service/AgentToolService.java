@@ -18,7 +18,8 @@ import java.util.Locale;
  *
  * <p>The webhook waits for this answer while the customer is on the line, so nothing here calls
  * Gemini: the message is built from a fixed text per topic plus the assistant's own one-line
- * note. The mid-call WhatsApp is still sent at most once per call (see {@link CallStateStore}).
+ * note. The mid-call WhatsApp is still sent at most once per call (see {@link CallStateStore}),
+ * to the contact who asked for the call (see {@link OptInService}).
  */
 @Slf4j
 @Service
@@ -68,14 +69,17 @@ public class AgentToolService {
 
     private final WhatsAppService whatsAppService;
     private final CallStateStore  callState;
+    private final OptInService    optIn;
     private final String          brochureUrl;
 
     public AgentToolService(WhatsAppService whatsAppService,
                             CallStateStore callState,
+                            OptInService optIn,
                             @Value("${agent.brochure-url:https://github.com/RojanFrancis/elevatebox-agent}")
                             String brochureUrl) {
         this.whatsAppService = whatsAppService;
         this.callState       = callState;
+        this.optIn           = optIn;
         this.brochureUrl     = brochureUrl;
     }
 
@@ -104,7 +108,9 @@ public class AgentToolService {
 
         boolean sent = false;
         try {
-            String id = whatsAppService.sendMidCallMessage(message(topic, note));
+            // The contact who asked for this call, or the configured test number for browser calls
+            String recipient = optIn.phoneForCall(callId).orElse(null);
+            String id = whatsAppService.sendMidCallMessage(recipient, message(topic, note));
             sent = true;
             log.info("Mid-call WhatsApp sent by the assistant's tool call: topic={} id={}", topic, id);
             return Outcome.ok("Sent " + topic.description + " to the customer's WhatsApp just now. "

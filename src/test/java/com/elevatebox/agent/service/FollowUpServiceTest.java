@@ -7,6 +7,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import static com.elevatebox.agent.service.GeminiService.LeadClassification.*;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -27,7 +28,7 @@ class FollowUpServiceTest {
 
     private String sent() {
         ArgumentCaptor<String> message = ArgumentCaptor.forClass(String.class);
-        verify(whatsApp).sendPostCallMessage(message.capture());
+        verify(whatsApp).sendPostCallMessage(isNull(), message.capture());
         return message.getValue();
     }
 

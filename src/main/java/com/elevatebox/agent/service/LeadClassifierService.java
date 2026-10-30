@@ -57,6 +57,16 @@ public class LeadClassifierService {
      * @return the outcome, including the names of any steps that failed
      */
     public LeadResult processPostCall(String transcript) {
+        return processPostCall(transcript, null);
+    }
+
+    /**
+     * Same as {@link #processPostCall(String)}, with the WhatsApps sent to the person who was on
+     * the call.
+     *
+     * @param recipient the caller's number, or null for the configured target number
+     */
+    public LeadResult processPostCall(String transcript, String recipient) {
         log.info("Starting post-call pipeline...");
         List<String> failures = new ArrayList<>();
 
@@ -70,7 +80,7 @@ public class LeadClassifierService {
 
         // Step 2: personalised follow-up WhatsApp (a generic thank-you if the recap is missing)
         stepRun("follow-up", failures,
-                () -> followUpService.sendPostCallFollowUp(analysis.followUpRecap(), label));
+                () -> followUpService.sendPostCallFollowUp(analysis.followUpRecap(), label, recipient));
 
         // Step 3: confirm a callback request, only worth doing for interested leads
         boolean callbackRequested = false;
@@ -81,7 +91,7 @@ public class LeadClassifierService {
             callbackTime = analysis.callbackWhen();
             String when = analysis.callbackWhen();
             log.info("Callback requested: {}", when);
-            stepRun("callback-confirmation", failures, () -> callbackService.sendCallbackConfirmation(when));
+            stepRun("callback-confirmation", failures, () -> callbackService.sendCallbackConfirmation(when, recipient));
         }
 
         LeadResult result = new LeadResult(label, analysis.reason(), analysis.summary(),
