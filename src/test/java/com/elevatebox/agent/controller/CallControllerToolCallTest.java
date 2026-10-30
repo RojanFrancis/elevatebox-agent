@@ -4,6 +4,7 @@ import com.elevatebox.agent.service.AgentToolService;
 import com.elevatebox.agent.service.CallRecordService;
 import com.elevatebox.agent.service.CallStateStore;
 import com.elevatebox.agent.service.LeadClassifierService;
+import com.elevatebox.agent.service.OptInService;
 import com.elevatebox.agent.service.VapiService;
 import com.elevatebox.agent.service.WhatsAppService;
 import com.google.gson.JsonObject;
@@ -31,14 +32,15 @@ class CallControllerToolCallTest {
 
     private CallController controller(boolean keywordMidCall) {
         CallStateStore state = new CallStateStore();
+        OptInService optIn = mock(OptInService.class);
         return new CallController(mock(VapiService.class), whatsApp, classifier, state, executor,
-                mock(CallRecordService.class), new AgentToolService(whatsApp, state, "https://example.com"),
-                keywordMidCall);
+                mock(CallRecordService.class), new AgentToolService(whatsApp, state, optIn, "https://example.com"),
+                optIn, keywordMidCall);
     }
 
     @Test
     void toolCallIsAnsweredWithItsResult() {
-        when(whatsApp.sendMidCallMessage(any())).thenReturn("wamid.1");
+        when(whatsApp.sendMidCallMessage(any(), any())).thenReturn("wamid.1");
 
         var response = controller(false).vapiWebhook("""
                 {"message":{"type":"tool-calls","call":{"id":"call-1"},
@@ -55,7 +57,7 @@ class CallControllerToolCallTest {
 
     @Test
     void failedToolCallIsAnsweredWithAnError() {
-        when(whatsApp.sendMidCallMessage(any())).thenThrow(new RuntimeException("down"));
+        when(whatsApp.sendMidCallMessage(any(), any())).thenThrow(new RuntimeException("down"));
 
         var response = controller(false).vapiWebhook("""
                 {"message":{"type":"tool-calls","call":{"id":"call-1"},
@@ -69,7 +71,7 @@ class CallControllerToolCallTest {
 
     @Test
     void apiRequestToolSendsOncePerCallId() {
-        when(whatsApp.sendMidCallMessage(any())).thenReturn("wamid.1");
+        when(whatsApp.sendMidCallMessage(any(), any())).thenReturn("wamid.1");
         CallController controller = controller(false);
 
         var first = controller.sendWhatsAppTool("call-1", "{\"topic\":\"pricing\",\"note\":\"Hi\"}");
@@ -78,12 +80,12 @@ class CallControllerToolCallTest {
         assertEquals(200, first.getStatusCode().value());
         assertEquals(true, first.getBody().get("success"));
         assertTrue(((String) second.getBody().get("result")).contains("already sent"));
-        verify(whatsApp, times(1)).sendMidCallMessage(any());
+        verify(whatsApp, times(1)).sendMidCallMessage(any(), any());
     }
 
     @Test
     void apiRequestToolFailureIs502() {
-        when(whatsApp.sendMidCallMessage(any())).thenThrow(new RuntimeException("down"));
+        when(whatsApp.sendMidCallMessage(any(), any())).thenThrow(new RuntimeException("down"));
 
         var response = controller(false).sendWhatsAppTool("call-1", "{}");
 

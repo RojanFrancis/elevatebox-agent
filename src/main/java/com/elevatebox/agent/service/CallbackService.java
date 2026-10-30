@@ -26,10 +26,19 @@ public class CallbackService {
      *                      "tomorrow morning")
      */
     public void sendCallbackConfirmation(String callbackHuman) {
+        sendCallbackConfirmation(callbackHuman, null);
+    }
+
+    /**
+     * Same as {@link #sendCallbackConfirmation(String)}, sent to a specific number.
+     *
+     * @param recipient the person who was on the call, or null for the configured target number
+     */
+    public void sendCallbackConfirmation(String callbackHuman, String recipient) {
         String message = "Hi! Just confirming — I'll call you back " + callbackHuman + ". " +
                 "Looking forward to connecting again! 😊\n\n" +
                 "— ElevateBox Team";
-        whatsAppService.sendPostCallMessage(message);
+        whatsAppService.sendPostCallMessage(recipient, message);
         log.info("Callback confirmation sent for: {}", callbackHuman);
     }
 }

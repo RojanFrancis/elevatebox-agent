@@ -95,8 +95,22 @@ public class WhatsAppService {
      * @throws RuntimeException if the send fails (see {@link #sendMessage(String, String)})
      */
     public String sendMidCallMessage(String messageBody) {
-        log.info("Sending mid-call WhatsApp to {}", Logs.maskPhone(targetPhone));
-        return sendMessage(targetPhone, messageBody);
+        return sendMidCallMessage(null, messageBody);
+    }
+
+    /**
+     * Sends a message during the call to a specific number, for example the contact who asked
+     * for the call.
+     *
+     * @param to          the recipient in international format, or null for the configured
+     *                    target number
+     * @param messageBody the text to send
+     * @return the WhatsApp message ID returned by Meta
+     */
+    public String sendMidCallMessage(String to, String messageBody) {
+        String recipient = recipientOrTarget(to);
+        log.info("Sending mid-call WhatsApp to {}", Logs.maskPhone(recipient));
+        return sendMessage(recipient, messageBody);
     }
 
     /**
@@ -108,8 +122,37 @@ public class WhatsAppService {
      * @throws RuntimeException if the send fails (see {@link #sendMessage(String, String)})
      */
     public String sendPostCallMessage(String messageBody) {
-        log.info("Sending post-call WhatsApp to {}", Logs.maskPhone(targetPhone));
-        return sendMessage(targetPhone, messageBody);
+        return sendPostCallMessage(null, messageBody);
+    }
+
+    /**
+     * Sends a message after the call to a specific number.
+     *
+     * @param to          the recipient in international format, or null for the configured
+     *                    target number
+     * @param messageBody the text to send
+     * @return the WhatsApp message ID returned by Meta
+     */
+    public String sendPostCallMessage(String to, String messageBody) {
+        String recipient = recipientOrTarget(to);
+        log.info("Sending post-call WhatsApp to {}", Logs.maskPhone(recipient));
+        return sendMessage(recipient, messageBody);
+    }
+
+    /**
+     * Replies to someone who messaged the business, for example to confirm their call request.
+     *
+     * @param to          the recipient in international format
+     * @param messageBody the text to send
+     * @return the WhatsApp message ID returned by Meta
+     */
+    public String sendMessageTo(String to, String messageBody) {
+        log.info("Sending WhatsApp reply to {}", Logs.maskPhone(to));
+        return sendMessage(to, messageBody);
+    }
+
+    private String recipientOrTarget(String to) {
+        return to == null || to.isBlank() ? targetPhone : to;
     }
 
     /**

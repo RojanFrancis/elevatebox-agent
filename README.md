@@ -97,6 +97,7 @@ src/main/java/com/elevatebox/agent/
 | GET | /api/call/health | Health check |
 | POST | /api/call/initiate | Triggers outbound call |
 | POST | /api/call/webhook | Receives Vapi call events and answers the assistant's tool calls |
+| GET/POST | /api/whatsapp/webhook | Meta WhatsApp webhook: subscription check and incoming messages (call requests) |
 | POST | /api/call/tools/send-whatsapp | The same `send_whatsapp` tool for Vapi's "API Request" tool type (body: `topic`, `note`; call ID in `X-Call-Id`) |
 | POST | /api/call/classify | Classify a transcript — returns the label (HOT/WARM/COLD/UNKNOWN) and a one-line reason |
 | POST | /api/call/mid-call | Send WhatsApp mid-call |
@@ -127,6 +128,44 @@ COLD — curious but no real intent
 Real people don't say "I am a HOT lead." They say things like "my brother handles this" or "how soon can you start." The prompt is built to read that.
 
 Gemini is asked for structured JSON (`classification` plus a one-sentence `reason`), not a free-text word. If the reply is empty, cut off or unclear, the lead is labelled **UNKNOWN**, never silently COLD, so a model hiccup can't write off a real buyer. UNKNOWN leads get a neutral follow-up instead of a sales push.
+
+## Consent-first calling: the customer messages first
+
+The agent doesn't cold-call anyone. A visitor taps **Get a call** on the website, which opens WhatsApp with a ready message:
+
+```
+https://wa.me/<business number>?text=Hi%2C%20please%20call%20me
+```
+
+```mermaid
+sequenceDiagram
+    participant C as Customer
+    participant WA as WhatsApp (Meta)
+    participant App as Spring Boot
+    participant V as Vapi
+    C->>WA: "Hi, please call me"
+    WA->>App: webhook (signed, X-Hub-Signature-256)
+    App->>App: consent recorded, cooldown and daily cap checked
+    App->>V: start call to the customer's number (max 3 min)
+    App->>WA: "Ria is calling you now 📞"
+    V->>C: Ria calls
+    C->>V: "send me the pricing"
+    V->>App: send_whatsapp tool call
+    App->>WA: pricing message to the same customer
+```
+
+Why this design:
+
+| Problem | How it is handled |
+|---|---|
+| **Consent**: calling people who never asked is unwelcome, and regulated in India (TRAI/DND) | Only numbers that wrote "call" get called; the time of that message is stored as `consent_at`. Any other message gets instructions instead of a call. |
+| **WhatsApp's 24-hour rule**: free-form messages only reach people who messaged within 24 hours | The customer's own message opens the window, so the mid-call and post-call WhatsApps are delivered. |
+| **Cost**: every call minute is paid | One call per number per `OPTIN_COOLDOWN_HOURS` (24), at most `OPTIN_CALLS_PER_DAY` (20) opt-in calls a day, and every call ends after `VAPI_MAX_CALL_SECONDS` (180). |
+| **Retries and abuse** | Meta's webhook is verified with the app secret (HMAC-SHA256); repeated deliveries of a message ID are ignored; the webhook answers at once and works on a bounded pool. |
+
+Each call is linked to the contact who asked for it (`contacts.last_call_id`), so the mid-call tool and the post-call follow-up go to **that person**. Browser test calls from the Vapi dashboard have no contact and still use `WHATSAPP_TARGET_PHONE`. Only the number, WhatsApp profile name and timestamps are stored, never message text.
+
+**Setup:** in the Meta app, WhatsApp → Configuration → Webhook: callback URL `https://<your-service>/api/whatsapp/webhook`, verify token = `WHATSAPP_VERIFY_TOKEN`, then subscribe to the `messages` field. Set `META_APP_SECRET` from App settings → Basic. Without both, the endpoint accepts nothing. Phone calls also need a funded Twilio number in Vapi.
 
 ## Mid-call WhatsApp: the assistant decides
 
@@ -208,9 +247,12 @@ Then point the Vapi assistant's Server URL at `https://<your-service>.onrender.c
 - A Vapi browser call reaches the deployed service through the Bearer-authenticated webhook; the end-of-call report is analysed once, the follow-up and callback-confirmation WhatsApps arrive, and the call is stored.
 - One structured Gemini request per call returns the rating, reason, summary, WhatsApp recap and callback request. Unclear or failed answers become UNKNOWN, transient errors are retried, and fallback models take over when a model is out of quota.
 - Calls are stored in TiDB Cloud (the outcome only, never the transcript). The leads API and page need the API key. The public demo endpoint can only analyse and is rate limited.
-- 108 automated tests run in CI on every push. The service runs from a Dockerfile on Render.
+- In a Vapi browser call (October 2026) the assistant called `send_whatsapp` on its own when asked for pricing, the endpoint answered with success (Meta accepted the message) and the assistant told the caller it was sent. Delivery to the phone then depends on WhatsApp's 24-hour window, which the opt-in flow below opens.
+- 129 automated tests run in CI on every push. The service runs from a Dockerfile on Render.
 
-**Built and unit-tested, not separately re-checked live:** the `send_whatsapp` tool call during a live call, the keyword fallback for the mid-call WhatsApp, and the de-duplication of repeated webhooks.
+**Built and unit-tested, not yet run live:** the WhatsApp opt-in flow (it needs the Meta webhook configured and a funded Twilio number for the phone leg).
+
+**Built and unit-tested, not separately re-checked live:** the keyword fallback for the mid-call WhatsApp, and the de-duplication of repeated webhooks.
 
 **Known limits**
 - The phone leg (Vapi with Twilio) worked in earlier versions, but the Twilio account is currently out of funds, so outbound phone calls have not been re-run since the rewrite. The browser-call path above is what was verified.

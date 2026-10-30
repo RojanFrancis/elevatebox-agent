@@ -41,6 +41,10 @@ public class VapiService {
     @Value("${vapi.assistant-id:}")
     private String assistantId;
 
+    /** Hard limit on call length, so a stuck or abusive call cannot run up the bill. */
+    @Value("${vapi.max-call-seconds:180}")
+    private int maxCallSeconds;
+
     /** The send_whatsapp tool definition; paste the same JSON into a saved assistant's tools. */
     static final String SEND_WHATSAPP_TOOL = "vapi/send-whatsapp-tool.json";
 
@@ -58,8 +62,20 @@ public class VapiService {
      * @throws RuntimeException if the Vapi API returns an error response
      */
     public String initiateCall() {
-        JsonObject body = buildCallPayload();
-        log.info("Initiating Vapi outbound call to {}", Logs.maskPhone(targetPhone));
+        return initiateCall(targetPhone, null);
+    }
+
+    /**
+     * Calls a specific number, for example a contact who asked for a call on WhatsApp.
+     *
+     * @param number the number to call, in E.164
+     * @param name   the customer's name for the assistant, or null
+     * @return the ID of the created Vapi call, or "unknown" if the response had none
+     * @throws RuntimeException if the Vapi API returns an error response
+     */
+    public String initiateCall(String number, String name) {
+        JsonObject body = buildCallPayload(number, name);
+        log.info("Initiating Vapi outbound call to {}", Logs.maskPhone(number));
 
         String response = webClient.post()
                 .uri("/call/phone")
@@ -98,19 +114,24 @@ public class VapiService {
 
     // ─── Private helpers ────────────────────────────────────────────────────────
 
-    private JsonObject buildCallPayload() {
+    private JsonObject buildCallPayload(String number, String name) {
         JsonObject payload = new JsonObject();
 
         // The number to call FROM: an imported Twilio number that Vapi already has credentials for
         payload.addProperty("phoneNumberId", phoneNumberId);
 
-        payload.add("customer", buildCustomer());
+        payload.add("customer", buildCustomer(number, name));
 
         // If you have a saved Vapi assistant use its ID, otherwise inline the assistant config
         if (assistantId != null && !assistantId.isBlank()) {
             payload.addProperty("assistantId", assistantId);
+            JsonObject overrides = new JsonObject();
+            overrides.addProperty("maxDurationSeconds", maxCallSeconds);
+            payload.add("assistantOverrides", overrides);
         } else {
-            payload.add("assistant", buildInlineAssistant());
+            JsonObject assistant = buildInlineAssistant();
+            assistant.addProperty("maxDurationSeconds", maxCallSeconds);
+            payload.add("assistant", assistant);
         }
 
         return payload;
@@ -125,10 +146,10 @@ public class VapiService {
         }
     }
 
-    private JsonObject buildCustomer() {
+    private JsonObject buildCustomer(String number, String name) {
         JsonObject customer = new JsonObject();
-        customer.addProperty("number", targetPhone);
-        customer.addProperty("name",   "ElevateBox Lead");
+        customer.addProperty("number", number);
+        customer.addProperty("name",   name == null || name.isBlank() ? "ElevateBox Lead" : name);
         return customer;
     }
 

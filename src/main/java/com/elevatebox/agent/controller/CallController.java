@@ -5,6 +5,7 @@ import com.elevatebox.agent.service.CallRecordService;
 import com.elevatebox.agent.service.CallStateStore;
 import com.elevatebox.agent.service.GeminiService;
 import com.elevatebox.agent.service.LeadClassifierService;
+import com.elevatebox.agent.service.OptInService;
 import com.elevatebox.agent.service.VapiService;
 import com.elevatebox.agent.service.WhatsAppService;
 import com.google.gson.JsonArray;
@@ -39,6 +40,7 @@ public class CallController {
     private final ThreadPoolTaskExecutor webhookExecutor;
     private final CallRecordService      callRecords;
     private final AgentToolService       agentTools;
+    private final OptInService           optIn;
 
     /**
      * True when the mid-call WhatsApp is also triggered by keywords in the live transcript. Off by
@@ -54,6 +56,7 @@ public class CallController {
                           ThreadPoolTaskExecutor webhookExecutor,
                           CallRecordService callRecords,
                           AgentToolService agentTools,
+                          OptInService optIn,
                           @Value("${agent.keyword-mid-call:false}") boolean keywordMidCall) {
         this.vapiService           = vapiService;
         this.whatsAppService       = whatsAppService;
@@ -62,6 +65,7 @@ public class CallController {
         this.webhookExecutor       = webhookExecutor;
         this.callRecords           = callRecords;
         this.agentTools            = agentTools;
+        this.optIn                 = optIn;
         this.keywordMidCall        = keywordMidCall;
     }
 
@@ -303,7 +307,8 @@ public class CallController {
 
     private void runPostCall(String callId, String transcript) {
         try {
-            LeadClassifierService.LeadResult result = leadClassifierService.processPostCall(transcript);
+            String recipient = optIn.phoneForCall(callId).orElse(null);
+            LeadClassifierService.LeadResult result = leadClassifierService.processPostCall(transcript, recipient);
             callRecords.save(callId, "vapi", result);
         } catch (Exception e) {
             log.error("Post-call pipeline crashed (callId={}): {}", callId, e.getMessage(), e);

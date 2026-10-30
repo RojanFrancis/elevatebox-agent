@@ -14,8 +14,9 @@ import java.security.MessageDigest;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
- * Authenticates every {@code /api/**} request except the health check and the public demo
- * analysis endpoint (which can only analyse text; see {@code DemoController}).
+ * Authenticates every {@code /api/**} request except the health check, the public demo
+ * analysis endpoint (which can only analyse text; see {@code DemoController}) and the WhatsApp
+ * webhook (which verifies Meta's signature; see {@code WhatsAppWebhookController}).
  *
  * <p>Two callers, two secrets, so a leak of one does not expose the other:
  * <ul>
@@ -38,6 +39,7 @@ public class ApiKeyFilter extends OncePerRequestFilter {
     private static final String TOOLS_PREFIX = "/api/call/tools/";
     private static final String HEALTH_PATH  = "/api/call/health";
     private static final String DEMO_PATH    = "/api/demo/analyze";
+    private static final String WHATSAPP_PATH = "/api/whatsapp/webhook";
 
     private final byte[] apiKey;
     private final byte[] webhookSecret;
@@ -56,7 +58,9 @@ public class ApiKeyFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest req) {
         String path = req.getRequestURI();
-        return !path.startsWith("/api/") || path.equals(HEALTH_PATH) || path.equals(DEMO_PATH);
+        // The WhatsApp webhook is called by Meta and checks Meta's signature itself
+        return !path.startsWith("/api/") || path.equals(HEALTH_PATH) || path.equals(DEMO_PATH)
+                || path.equals(WHATSAPP_PATH);
     }
 
     @Override

@@ -63,12 +63,23 @@ public class FollowUpService {
      * @param classification lead temperature, which decides the emoji and the next-step text
      */
     public void sendPostCallFollowUp(String recap, GeminiService.LeadClassification classification) {
+        sendPostCallFollowUp(recap, classification, null);
+    }
+
+    /**
+     * Same as {@link #sendPostCallFollowUp(String, GeminiService.LeadClassification)}, sent to a
+     * specific number.
+     *
+     * @param recipient the person who was on the call, or null for the configured target number
+     */
+    public void sendPostCallFollowUp(String recap, GeminiService.LeadClassification classification,
+                                     String recipient) {
         log.info("Building post-call follow-up WhatsApp...");
 
         String context = (recap == null || recap.isBlank()) ? FALLBACK_RECAP : recap.trim();
         String message = buildFollowUpMessage(context, classification);
 
-        whatsAppService.sendPostCallMessage(message);
+        whatsAppService.sendPostCallMessage(recipient, message);
         log.info("Post-call follow-up sent — classification: {}", classification);
     }
 
