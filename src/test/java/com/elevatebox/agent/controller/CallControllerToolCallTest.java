@@ -68,6 +68,38 @@ class CallControllerToolCallTest {
     }
 
     @Test
+    void apiRequestToolSendsOncePerCallId() {
+        when(whatsApp.sendMidCallMessage(any())).thenReturn("wamid.1");
+        CallController controller = controller(false);
+
+        var first = controller.sendWhatsAppTool("call-1", "{\"topic\":\"pricing\",\"note\":\"Hi\"}");
+        var second = controller.sendWhatsAppTool("call-1", "{\"topic\":\"pricing\"}");
+
+        assertEquals(200, first.getStatusCode().value());
+        assertEquals(true, first.getBody().get("success"));
+        assertTrue(((String) second.getBody().get("result")).contains("already sent"));
+        verify(whatsApp, times(1)).sendMidCallMessage(any());
+    }
+
+    @Test
+    void apiRequestToolFailureIs502() {
+        when(whatsApp.sendMidCallMessage(any())).thenThrow(new RuntimeException("down"));
+
+        var response = controller(false).sendWhatsAppTool("call-1", "{}");
+
+        assertEquals(502, response.getStatusCode().value());
+        assertEquals(false, response.getBody().get("success"));
+    }
+
+    @Test
+    void apiRequestToolRejectsANonObjectBody() {
+        var response = controller(false).sendWhatsAppTool("call-1", "[1]");
+
+        assertEquals(400, response.getStatusCode().value());
+        verifyNoInteractions(whatsApp);
+    }
+
+    @Test
     void keywordsDoNotTriggerTheMidCallCheckByDefault() {
         controller(false).vapiWebhook("""
                 {"message":{"type":"transcript","role":"user","transcriptType":"final",

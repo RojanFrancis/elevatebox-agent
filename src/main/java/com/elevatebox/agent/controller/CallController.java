@@ -9,6 +9,7 @@ import com.elevatebox.agent.service.VapiService;
 import com.elevatebox.agent.service.WhatsAppService;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -144,6 +145,36 @@ public class CallController {
             log.error("Error handling Vapi webhook: {}", e.getMessage(), e);
         }
         return ResponseEntity.ok("OK");
+    }
+
+    // ─── 2b. send_whatsapp as a Vapi "API Request" tool ──────────────────────
+
+    /**
+     * POST /api/call/tools/send-whatsapp
+     * Body: { "topic": "pricing|portfolio|details", "note": "..." }, header X-Call-Id.
+     *
+     * <p>The same tool as the {@code tool-calls} webhook message, for assistants that use Vapi's
+     * "API Request" tool type: Vapi posts the model's arguments as the body and the call ID in
+     * {@code X-Call-Id}, and reads this response back to the assistant. A failed send answers
+     * 502, which Vapi treats as a failed request.
+     */
+    @PostMapping("/tools/send-whatsapp")
+    public ResponseEntity<Map<String, Object>> sendWhatsAppTool(
+            @RequestHeader(value = "X-Call-Id", required = false) String callId,
+            @RequestBody(required = false) String body) {
+
+        JsonObject arguments;
+        try {
+            arguments = body == null || body.isBlank() ? new JsonObject() : JsonParser.parseString(body).getAsJsonObject();
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Body must be a JSON object"));
+        }
+
+        AgentToolService.Outcome outcome = agentTools.handle(callId, AgentToolService.SEND_WHATSAPP, arguments);
+        if (outcome.error() != null) {
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("success", false, "error", outcome.error()));
+        }
+        return ResponseEntity.ok(Map.of("success", true, "result", outcome.result()));
     }
 
     // ─── 3. Manual post-call processing ──────────────────────────────────────

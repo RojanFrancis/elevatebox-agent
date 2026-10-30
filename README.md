@@ -97,13 +97,14 @@ src/main/java/com/elevatebox/agent/
 | GET | /api/call/health | Health check |
 | POST | /api/call/initiate | Triggers outbound call |
 | POST | /api/call/webhook | Receives Vapi call events and answers the assistant's tool calls |
+| POST | /api/call/tools/send-whatsapp | The same `send_whatsapp` tool for Vapi's "API Request" tool type (body: `topic`, `note`; call ID in `X-Call-Id`) |
 | POST | /api/call/classify | Classify a transcript — returns the label (HOT/WARM/COLD/UNKNOWN) and a one-line reason |
 | POST | /api/call/mid-call | Send WhatsApp mid-call |
 | POST | /api/call/process | Run full post-call pipeline on a transcript |
 | GET | /api/leads | Newest analysed calls plus totals per label (needs the API key) |
 | POST | /api/demo/analyze | Public: analyse a pasted transcript, nothing is sent or stored |
 
-**Auth:** every endpoint except `/health` and the public demo route is protected. Your own calls send `X-API-Key`. `/webhook` is called by Vapi and checks a separate shared secret (`X-Vapi-Secret` or a Bearer token), so one leaked key never exposes both.
+**Auth:** every endpoint except `/health` and the public demo route is protected. Your own calls send `X-API-Key`. `/webhook` and `/tools/*` are called by Vapi and checks a separate shared secret (`X-Vapi-Secret` or a Bearer token), so one leaked key never exposes both.
 
 ---
 
@@ -140,7 +141,8 @@ Assistant: "Done, I've just sent our pricing to your WhatsApp. While you look, w
 
 - The webhook answers while the customer is on the line, so the tool never calls Gemini: the message is a fixed text per topic plus the assistant's note (one line, links and markup stripped, at most 200 characters), and the WhatsApp send times out after 10 seconds.
 - At most one mid-call WhatsApp per call. A second request is answered with "already sent, tell them to check WhatsApp"; a failed send is answered with an error, so the assistant promises the details after the call instead.
-- The inline assistant (no `VAPI_ASSISTANT_ID`) gets the tool automatically. For a saved assistant, add the JSON above under Tools in the Vapi dashboard; the tool has no server URL of its own, so calls go to the same webhook. If a saved assistant has no tool, set `AGENT_KEYWORD_MID_CALL=true` to fall back to the older keyword trigger.
+- The inline assistant (no `VAPI_ASSISTANT_ID`) gets the tool automatically.
+- For a saved assistant, create an **API Request** tool in the Vapi dashboard: name `send_whatsapp`, `POST https://<your-service>/api/call/tools/send-whatsapp`, header `Authorization: Bearer <VAPI_WEBHOOK_SECRET>`, and a body schema with `topic` (enum pricing, portfolio, details; required) and `note` (string). Vapi sends the call ID in `X-Call-Id`, which keeps it to one WhatsApp per call; a failed send answers 502. If a saved assistant has no tool, set `AGENT_KEYWORD_MID_CALL=true` to fall back to the older keyword trigger.
 
 ### Reliability
 
@@ -206,7 +208,7 @@ Then point the Vapi assistant's Server URL at `https://<your-service>.onrender.c
 - A Vapi browser call reaches the deployed service through the Bearer-authenticated webhook; the end-of-call report is analysed once, the follow-up and callback-confirmation WhatsApps arrive, and the call is stored.
 - One structured Gemini request per call returns the rating, reason, summary, WhatsApp recap and callback request. Unclear or failed answers become UNKNOWN, transient errors are retried, and fallback models take over when a model is out of quota.
 - Calls are stored in TiDB Cloud (the outcome only, never the transcript). The leads API and page need the API key. The public demo endpoint can only analyse and is rate limited.
-- 104 automated tests run in CI on every push. The service runs from a Dockerfile on Render.
+- 108 automated tests run in CI on every push. The service runs from a Dockerfile on Render.
 
 **Built and unit-tested, not separately re-checked live:** the `send_whatsapp` tool call during a live call, the keyword fallback for the mid-call WhatsApp, and the de-duplication of repeated webhooks.
 
