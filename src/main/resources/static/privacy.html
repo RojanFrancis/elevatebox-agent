@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ElevateBox privacy policy</title>
+<meta name="description" content="What the ElevateBox voice agent stores when you message it on WhatsApp or take a call from it, and how to have it deleted.">
+<style>
+  :root {
+    --ink: #12333a;
+    --muted: #4f656a;
+    --paper: #edf3f4;
+    --panel: #ffffff;
+    --line: #c9d8da;
+    --accent: #0f766e;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e3eef0;
+      --muted: #9db3b8;
+      --paper: #0f1d20;
+      --panel: #16282c;
+      --line: #2a4248;
+      --accent: #5eead4;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 16px/1.6 var(--sans);
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 40px 16px 64px;
+  }
+  h1 { font: 600 2rem/1.2 var(--serif); margin: 0 0 4px; }
+  h2 { font: 600 1.2rem/1.3 var(--serif); margin: 32px 0 8px; }
+  .updated { color: var(--muted); margin: 0 0 24px; }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 4px 20px 16px;
+    margin-top: 16px;
+  }
+  ul { padding-left: 20px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Privacy policy</h1>
+  <p class="updated">ElevateBox voice agent · last updated 31 October 2026</p>
+
+  <p>ElevateBox is a demo voice agent for a website-building studio. It calls people who ask for a call on
+    WhatsApp, talks to them about building an e-commerce website, and sends details on WhatsApp. This page says
+    what it keeps and why.</p>
+
+  <section>
+    <h2>What we store</h2>
+    <ul>
+      <li><strong>Your WhatsApp number and profile name</strong>, when you message our WhatsApp number.</li>
+      <li><strong>When you asked for a call</strong> (your consent), and when we last called you, so we never
+        call more than once a day.</li>
+      <li><strong>A short summary of each call</strong>, a lead rating (hot, warm or cold) and any callback time
+        you asked for. We do not store call recordings or full transcripts.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>How we use it</h2>
+    <ul>
+      <li>We only call you after you send us a message asking for a call. Calls last at most a few minutes.</li>
+      <li>During or after the call we may send you a WhatsApp message with the details you asked for.</li>
+      <li>We never sell your data or use it for advertising.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Services that process it</h2>
+    <ul>
+      <li><strong>Meta WhatsApp Business Platform</strong>, to receive and send WhatsApp messages.</li>
+      <li><strong>Vapi</strong> and its telephony provider, to place and run the voice call.</li>
+      <li><strong>Google Gemini</strong>, to summarise the call and rate the lead.</li>
+      <li><strong>Render</strong> and <strong>TiDB Cloud</strong>, to host the service and its database.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Deleting your data</h2>
+    <p>To have your number and call history deleted, open a request at
+      <a href="https://github.com/RojanFrancis/elevatebox-agent/issues">github.com/RojanFrancis/elevatebox-agent/issues</a>
+      with the title "Data deletion". Do not post your phone number there: we will reply with a private way to confirm it.
+      We delete your data within 7 days of confirming it.</p>
+  </section>
+
+  <p>The source code of this agent is public at
+    <a href="https://github.com/RojanFrancis/elevatebox-agent">github.com/RojanFrancis/elevatebox-agent</a>.</p>
+</main>
+</body>
+</html>
