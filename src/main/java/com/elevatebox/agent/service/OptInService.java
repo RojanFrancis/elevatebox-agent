@@ -55,9 +55,14 @@ public class OptInService {
     static final String BUSY = "Ria has reached today's call limit. Please reply *CALL* again tomorrow, "
             + "or leave your question here and the team will get back to you.";
     static final String FAILED = "Sorry, we couldn't place the call just now. Please reply *CALL* to try again in a few minutes.";
+    static final String NOT_REACHED = "Ria tried to call you but couldn't get through 📵 "
+            + "Reply *CALL* whenever you're free and she'll try again.";
+
+    /** How long after a call starts a tool request without a call ID is matched to it by phone. */
+    static final Duration CALL_MATCH_WINDOW = Duration.ofMinutes(15);
 
     private final ContactRepository contacts;
-    private final VapiService vapiService;
+    private final OutboundCaller caller;
     private final WhatsAppService whatsAppService;
     private final Clock clock;
     private final Duration cooldown;
@@ -72,16 +77,16 @@ public class OptInService {
     };
 
     @Autowired
-    public OptInService(ContactRepository contacts, VapiService vapiService, WhatsAppService whatsAppService,
+    public OptInService(ContactRepository contacts, OutboundCaller caller, WhatsAppService whatsAppService,
                         @Value("${optin.cooldown-hours:24}") long cooldownHours,
                         @Value("${optin.calls-per-day:20}") int callsPerDay) {
-        this(contacts, vapiService, whatsAppService, Clock.systemUTC(), Duration.ofHours(cooldownHours), callsPerDay);
+        this(contacts, caller, whatsAppService, Clock.systemUTC(), Duration.ofHours(cooldownHours), callsPerDay);
     }
 
-    OptInService(ContactRepository contacts, VapiService vapiService, WhatsAppService whatsAppService,
+    OptInService(ContactRepository contacts, OutboundCaller caller, WhatsAppService whatsAppService,
                  Clock clock, Duration cooldown, int callsPerDay) {
         this.contacts = contacts;
-        this.vapiService = vapiService;
+        this.caller = caller;
         this.whatsAppService = whatsAppService;
         this.clock = clock;
         this.cooldown = cooldown;
@@ -105,7 +110,7 @@ public class OptInService {
     }
 
     /**
-     * The phone number of the contact a Vapi call was placed to, if the call came from an opt-in.
+     * The phone number of the contact a call was placed to, if the call came from an opt-in.
      * Browser test calls and calls to the configured test number have none. Never throws.
      */
     public Optional<String> phoneForCall(String callId) {
@@ -117,6 +122,53 @@ public class OptInService {
         } catch (RuntimeException e) {
             log.warn("Could not look up the contact for call {}: {}", callId, e.getMessage());
             return Optional.empty();
+        }
+    }
+
+    /**
+     * The call placed to a number in the last {@link #CALL_MATCH_WINDOW}, for a tool request that
+     * carries the customer's number but not the call ID (Bolna's custom tools). Never throws.
+     */
+    public Optional<String> recentCallIdForPhone(String phone) {
+        if (phone == null || phone.isBlank()) {
+            return Optional.empty();
+        }
+        String e164 = phone.startsWith("+") ? phone : "+" + phone;
+        Instant since = clock.instant().minus(CALL_MATCH_WINDOW);
+        try {
+            return contacts.findByPhone(e164)
+                    .filter(c -> c.getLastCallId() != null && c.getLastCallAt() != null && c.getLastCallAt().isAfter(since))
+                    .map(Contact::getLastCallId);
+        } catch (RuntimeException e) {
+            log.warn("Could not look up the call for {}: {}", Logs.maskPhone(e164), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * The call never connected (no answer, busy, failed or out of credit): the cooldown is lifted
+     * so the customer can simply ask again, and they are told on WhatsApp. Never throws.
+     *
+     * @return true if the call belonged to an opt-in contact
+     */
+    public synchronized boolean callNotConnected(String callId) {
+        if (callId == null) {
+            return false;
+        }
+        try {
+            Optional<Contact> found = contacts.findFirstByLastCallId(callId);
+            if (found.isEmpty()) {
+                return false;
+            }
+            Contact contact = found.get();
+            contact.setLastCallAt(null);
+            contacts.save(contact);
+            reply(contact, NOT_REACHED);
+            log.info("Call {} to {} did not connect; cooldown lifted", callId, Logs.maskPhone(contact.getPhone()));
+            return true;
+        } catch (RuntimeException e) {
+            log.warn("Could not handle the unconnected call {}: {}", callId, e.getMessage());
+            return false;
         }
     }
 
@@ -153,7 +205,7 @@ public class OptInService {
 
         String callId;
         try {
-            callId = vapiService.initiateCall(contact.getPhone(), contact.getName());
+            callId = caller.initiateCall(contact.getPhone(), contact.getName());
         } catch (RuntimeException e) {
             log.error("Could not start the opt-in call to {}: {}", Logs.maskPhone(contact.getPhone()), e.getMessage());
             contacts.save(contact);

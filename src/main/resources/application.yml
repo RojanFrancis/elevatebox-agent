@@ -26,8 +26,16 @@ vapi:
   phone-number-id: ${VAPI_PHONE_NUMBER_ID} # Vapi dashboard -> Phone Numbers -> ID
   assistant-id: ${VAPI_ASSISTANT_ID:}      # optional; blank uses the inline assistant
   target-phone: ${VAPI_TARGET_PHONE}       # E.164, the number the agent dials
-  webhook-secret: ${VAPI_WEBHOOK_SECRET}   # same value as the Vapi Server URL credential
+  webhook-secret: ${VAPI_WEBHOOK_SECRET}   # Vapi's Server URL credential; Bolna sends it as a Bearer header too
   max-call-seconds: ${VAPI_MAX_CALL_SECONDS:180}  # hard limit on every outbound call
+
+voice:
+  provider: ${VOICE_PROVIDER:vapi}         # vapi or bolna: which platform places the calls
+
+bolna:
+  api-key: ${BOLNA_API_KEY:}               # Bolna dashboard -> Developers -> API Keys
+  agent-id: ${BOLNA_AGENT_ID:}             # the agent's ID in Bolna's Agent Studio
+  from-number: ${BOLNA_FROM_NUMBER:}       # optional; blank uses the account's default number
 
 gemini:
   api-key: ${GEMINI_API_KEY}

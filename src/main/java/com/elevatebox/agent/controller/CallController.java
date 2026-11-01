@@ -6,7 +6,7 @@ import com.elevatebox.agent.service.CallStateStore;
 import com.elevatebox.agent.service.GeminiService;
 import com.elevatebox.agent.service.LeadClassifierService;
 import com.elevatebox.agent.service.OptInService;
-import com.elevatebox.agent.service.VapiService;
+import com.elevatebox.agent.service.OutboundCaller;
 import com.elevatebox.agent.service.WhatsAppService;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -19,8 +19,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.regex.Pattern;
 
@@ -33,7 +35,12 @@ public class CallController {
     private static final Pattern MID_CALL_TRIGGER = Pattern.compile(
             "send me|more info|whatsapp|pric(e|ing)|brochure|portfolio", Pattern.CASE_INSENSITIVE);
 
-    private final VapiService            vapiService;
+    /** Bolna statuses meaning the call ended without a conversation. */
+    private static final Set<String> BOLNA_NOT_CONNECTED =
+            Set.of("no-answer", "busy", "failed", "canceled", "stopped", "error", "balance-low");
+
+    private final OutboundCaller         caller;
+    private final String                 targetPhone;
     private final WhatsAppService        whatsAppService;
     private final LeadClassifierService  leadClassifierService;
     private final CallStateStore         callState;
@@ -49,7 +56,8 @@ public class CallController {
      */
     private final boolean keywordMidCall;
 
-    public CallController(VapiService vapiService,
+    public CallController(OutboundCaller caller,
+                          @Value("${vapi.target-phone}") String targetPhone,
                           WhatsAppService whatsAppService,
                           LeadClassifierService leadClassifierService,
                           CallStateStore callState,
@@ -58,7 +66,8 @@ public class CallController {
                           AgentToolService agentTools,
                           OptInService optIn,
                           @Value("${agent.keyword-mid-call:false}") boolean keywordMidCall) {
-        this.vapiService           = vapiService;
+        this.caller                = caller;
+        this.targetPhone           = targetPhone;
         this.whatsAppService       = whatsAppService;
         this.leadClassifierService = leadClassifierService;
         this.callState             = callState;
@@ -75,8 +84,8 @@ public class CallController {
      * POST /api/call/initiate
      * Kicks off the entire flow:
      *   1. (Optional) send pre-call WhatsApp
-     *   2. Initiate Vapi outbound call
-     * Returns only the Vapi call ID, not Vapi's full response.
+     *   2. Call the configured test number through the chosen voice platform
+     * Returns only the call ID, not the platform's full response.
      */
     @PostMapping("/initiate")
     public ResponseEntity<Map<String, Object>> initiateCall(
@@ -89,7 +98,7 @@ public class CallController {
             preSid = whatsAppService.sendPreCallMessage();
         }
 
-        String callId = vapiService.initiateCall();
+        String callId = caller.initiateCall(targetPhone, null);
 
         return ResponseEntity.ok(Map.of(
                 "status",          "CALL_INITIATED",
@@ -135,7 +144,7 @@ public class CallController {
         log.info("Vapi event: type={} callId={}", event.type(), event.callId());
         try {
             if (event.isEndOfCall()) {
-                return handleCallEnded(event);
+                return handleCallEnded(event.callId(), event.endOfCallTranscript(), "vapi");
             }
             if (event.isToolCalls()) {
                 return handleToolCalls(event);
@@ -155,12 +164,17 @@ public class CallController {
 
     /**
      * POST /api/call/tools/send-whatsapp
-     * Body: { "topic": "pricing|portfolio|details", "note": "..." }, header X-Call-Id.
+     * Body: { "topic": "pricing|portfolio|details", "note": "...", "to_number": "+91..." },
+     * header X-Call-Id.
      *
      * <p>The same tool as the {@code tool-calls} webhook message, for assistants that use Vapi's
      * "API Request" tool type: Vapi posts the model's arguments as the body and the call ID in
      * {@code X-Call-Id}, and reads this response back to the assistant. A failed send answers
      * 502, which Vapi treats as a failed request.
+     *
+     * <p>Bolna's custom tools cannot send the call ID, so they send the customer's number as
+     * {@code to_number} instead, and the call placed to that number in the last few minutes is
+     * used. That keeps the once-per-call limit and sends the WhatsApp to the right person.
      */
     @PostMapping("/tools/send-whatsapp")
     public ResponseEntity<Map<String, Object>> sendWhatsAppTool(
@@ -174,11 +188,61 @@ public class CallController {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Body must be a JSON object"));
         }
 
+        if ((callId == null || callId.isBlank()) && arguments.has("to_number")
+                && arguments.get("to_number").isJsonPrimitive()) {
+            callId = optIn.recentCallIdForPhone(arguments.get("to_number").getAsString()).orElse(null);
+        }
+
         AgentToolService.Outcome outcome = agentTools.handle(callId, AgentToolService.SEND_WHATSAPP, arguments);
         if (outcome.error() != null) {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("success", false, "error", outcome.error()));
         }
         return ResponseEntity.ok(Map.of("success", true, "result", outcome.result()));
+    }
+
+    // ─── 2c. Bolna webhook ───────────────────────────────────────────────────
+
+    /**
+     * POST /api/call/bolna/callback
+     * Bolna posts the call's execution data here on every status change, with the same {@code id}
+     * each time. Only terminal statuses do anything:
+     * <ul>
+     *   <li>{@code completed} with a transcript runs the post-call pipeline once, exactly like
+     *       Vapi's end-of-call report.</li>
+     *   <li>no-answer, busy, failed and similar: the customer is told on WhatsApp and the
+     *       cooldown is lifted, so a missed call does not block them for a day.</li>
+     * </ul>
+     * Bolna does not sign its webhooks, so the agent's webhook is configured with the same
+     * secret header as Vapi's (see {@code ApiKeyFilter}).
+     */
+    @PostMapping("/bolna/callback")
+    public ResponseEntity<String> bolnaCallback(@RequestBody String payload) {
+        String callId;
+        String status;
+        String transcript;
+        try {
+            JsonObject body = JsonParser.parseString(payload).getAsJsonObject();
+            callId = text(body, "id");
+            status = Optional.ofNullable(text(body, "status")).orElse("").toLowerCase(Locale.ROOT);
+            transcript = text(body, "transcript");
+        } catch (RuntimeException e) {
+            log.warn("Rejecting Bolna webhook body that is not a JSON object");
+            return ResponseEntity.badRequest().body("BAD_PAYLOAD");
+        }
+
+        log.info("Bolna event: status={} callId={}", status, callId);
+        if ("completed".equals(status)) {
+            return handleCallEnded(callId, transcript, "bolna");
+        }
+        if (BOLNA_NOT_CONNECTED.contains(status) && callId != null && callState.markProcessed(callId)) {
+            try {
+                webhookExecutor.execute(() -> optIn.callNotConnected(callId));
+            } catch (RejectedExecutionException e) {
+                callState.clearProcessed(callId);
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body("BUSY");
+            }
+        }
+        return ResponseEntity.ok("OK");
     }
 
     // ─── 3. Manual post-call processing ──────────────────────────────────────
@@ -275,10 +339,7 @@ public class CallController {
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(body.toString());
     }
 
-    private ResponseEntity<String> handleCallEnded(VapiEvent event) {
-        String transcript = event.endOfCallTranscript();
-        String callId = event.callId();
-
+    private ResponseEntity<String> handleCallEnded(String callId, String transcript, String source) {
         if (transcript == null || transcript.isBlank()) {
             log.warn("Call ended but transcript was empty (callId={})", callId);
             return ResponseEntity.ok("OK");
@@ -294,9 +355,9 @@ public class CallController {
         }
 
         try {
-            webhookExecutor.execute(() -> runPostCall(callId, transcript));
+            webhookExecutor.execute(() -> runPostCall(callId, transcript, source));
         } catch (RejectedExecutionException e) {
-            log.error("Webhook queue full, asking Vapi to retry (callId={})", callId);
+            log.error("Webhook queue full, asking {} to retry (callId={})", source, callId);
             if (callId != null) {
                 callState.clearProcessed(callId);
             }
@@ -305,11 +366,11 @@ public class CallController {
         return ResponseEntity.ok("OK");
     }
 
-    private void runPostCall(String callId, String transcript) {
+    private void runPostCall(String callId, String transcript, String source) {
         try {
             String recipient = optIn.phoneForCall(callId).orElse(null);
             LeadClassifierService.LeadResult result = leadClassifierService.processPostCall(transcript, recipient);
-            callRecords.save(callId, "vapi", result);
+            callRecords.save(callId, source, result);
         } catch (Exception e) {
             log.error("Post-call pipeline crashed (callId={}): {}", callId, e.getMessage(), e);
         }
@@ -350,5 +411,9 @@ public class CallController {
         } finally {
             callState.finishMidCall(callId, sent);
         }
+    }
+
+    private static String text(JsonObject o, String key) {
+        return o.has(key) && o.get(key).isJsonPrimitive() ? o.get(key).getAsString() : null;
     }
 }

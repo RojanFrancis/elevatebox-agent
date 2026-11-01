@@ -23,14 +23,14 @@ class OptInServiceTest {
     private static final String PHONE = "+919876543210";
 
     private ContactRepository contacts;
-    private VapiService vapi;
+    private OutboundCaller vapi;
     private WhatsAppService whatsApp;
     private OptInService optIn;
 
     @BeforeEach
     void setUp() {
         contacts = mock(ContactRepository.class);
-        vapi = mock(VapiService.class);
+        vapi = mock(OutboundCaller.class);
         whatsApp = mock(WhatsAppService.class);
         when(contacts.findByPhone(any())).thenReturn(Optional.empty());
         when(contacts.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -148,5 +148,43 @@ class OptInServiceTest {
     void phoneForCallNeverThrows() {
         when(contacts.findFirstByLastCallId(any())).thenThrow(new RuntimeException("db down"));
         assertEquals(Optional.empty(), optIn.phoneForCall("call-1"));
+    }
+
+    @Test
+    void unconnectedCallLiftsTheCooldownAndTellsTheCustomer() {
+        Contact c = existing(NOW.minus(Duration.ofMinutes(2)));
+        when(contacts.findFirstByLastCallId("call-1")).thenReturn(Optional.of(c));
+
+        assertTrue(optIn.callNotConnected("call-1"));
+
+        assertNull(c.getLastCallAt());
+        verify(whatsApp).sendMessageTo(PHONE, OptInService.NOT_REACHED);
+        when(vapi.initiateCall(any(), any())).thenReturn("call-2");
+        assertEquals(CALLED, optIn.handle(msg("m1", "call me")));
+    }
+
+    @Test
+    void unconnectedCallWithoutAContactDoesNothing() {
+        assertFalse(optIn.callNotConnected("unknown"));
+        assertFalse(optIn.callNotConnected(null));
+        verifyNoInteractions(whatsApp);
+    }
+
+    @Test
+    void recentCallIsFoundByPhoneWithOrWithoutPlus() {
+        Contact c = existing(NOW.minus(Duration.ofMinutes(3)));
+        c.setLastCallId("call-1");
+
+        assertEquals(Optional.of("call-1"), optIn.recentCallIdForPhone(PHONE));
+        assertEquals(Optional.of("call-1"), optIn.recentCallIdForPhone(PHONE.substring(1)));
+        assertEquals(Optional.empty(), optIn.recentCallIdForPhone(null));
+    }
+
+    @Test
+    void oldCallIsNotMatchedByPhone() {
+        Contact c = existing(NOW.minus(Duration.ofHours(2)));
+        c.setLastCallId("call-1");
+
+        assertEquals(Optional.empty(), optIn.recentCallIdForPhone(PHONE));
     }
 }

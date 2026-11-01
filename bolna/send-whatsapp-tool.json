@@ -1,0 +1,38 @@
+{
+  "name": "send_whatsapp",
+  "description": "Send the customer a WhatsApp message with pricing, examples of websites we have built, or more details. Call it once, when the customer asks for pricing, examples, details or a WhatsApp, then tell them it is in their WhatsApp and carry on.",
+  "pre_call_message": "Sure, sending that to your WhatsApp now.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "topic": {
+        "type": "string",
+        "enum": ["pricing", "portfolio", "details"],
+        "description": "What the customer asked for"
+      },
+      "note": {
+        "type": "string",
+        "description": "One short friendly line for the message, for example what their business sells"
+      },
+      "to_number": {
+        "type": "string",
+        "description": "The customer's phone number, filled in automatically"
+      }
+    },
+    "required": ["topic"]
+  },
+  "key": "custom_task",
+  "value": {
+    "method": "POST",
+    "param": {
+      "topic": "%(topic)s",
+      "note": "%(note)s",
+      "to_number": "%(to_number)s"
+    },
+    "url": "https://elevatebox-agent.onrender.com/api/call/tools/send-whatsapp",
+    "api_token": "Bearer <VAPI_WEBHOOK_SECRET>",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  }
+}

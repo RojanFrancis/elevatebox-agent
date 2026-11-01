@@ -20,10 +20,10 @@ import static java.nio.charset.StandardCharsets.UTF_8;
  *
  * <p>Two callers, two secrets, so a leak of one does not expose the other:
  * <ul>
- *   <li>{@code /api/call/webhook} and the tool endpoints under {@code /api/call/tools/} are
- *       called by Vapi and must carry {@code vapi.webhook-secret}, either as
- *       {@code X-Vapi-Secret} or as an {@code Authorization: Bearer} token (both are formats
- *       Vapi can send).</li>
+ *   <li>{@code /api/call/webhook}, {@code /api/call/bolna/callback} and the tool endpoints
+ *       under {@code /api/call/tools/} are called by the voice platform (Vapi or Bolna) and
+ *       must carry {@code vapi.webhook-secret}, either as {@code X-Vapi-Secret} or as an
+ *       {@code Authorization: Bearer} token (formats both platforms can send).</li>
  *   <li>Everything else is called by the owner and must carry {@code app.api-key}
  *       in the {@code X-API-Key} header.</li>
  * </ul>
@@ -37,6 +37,7 @@ public class ApiKeyFilter extends OncePerRequestFilter {
     static final int MIN_SECRET_LENGTH = 24;
     private static final String WEBHOOK_PATH = "/api/call/webhook";
     private static final String TOOLS_PREFIX = "/api/call/tools/";
+    private static final String BOLNA_PATH   = "/api/call/bolna/callback";
     private static final String HEALTH_PATH  = "/api/call/health";
     private static final String DEMO_PATH    = "/api/demo/analyze";
     private static final String WHATSAPP_PATH = "/api/whatsapp/webhook";
@@ -69,7 +70,7 @@ public class ApiKeyFilter extends OncePerRequestFilter {
 
         boolean authenticated;
         String path = req.getRequestURI();
-        if (path.equals(WEBHOOK_PATH) || path.startsWith(TOOLS_PREFIX)) {
+        if (path.equals(WEBHOOK_PATH) || path.equals(BOLNA_PATH) || path.startsWith(TOOLS_PREFIX)) {
             authenticated = matches(webhookSecret, req.getHeader("X-Vapi-Secret"))
                     || matches(webhookSecret, bearerToken(req.getHeader("Authorization")));
         } else {

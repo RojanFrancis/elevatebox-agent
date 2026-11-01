@@ -112,4 +112,15 @@ class ApiKeyFilterTest {
         assertThrows(IllegalStateException.class, () -> new ApiKeyFilter("short", HOOK_SECRET));
         assertThrows(IllegalStateException.class, () -> new ApiKeyFilter(API_KEY, ""));
     }
+
+    @Test
+    void bolnaCallbackUsesTheWebhookSecret() throws Exception {
+        MockHttpServletRequest withSecret = post("/api/call/bolna/callback");
+        withSecret.addHeader("Authorization", "Bearer " + HOOK_SECRET);
+        assertTrue(call(withSecret).reachedController());
+
+        MockHttpServletRequest withApiKey = post("/api/call/bolna/callback");
+        withApiKey.addHeader("X-API-Key", API_KEY);
+        assertEquals(401, call(withApiKey).status());
+    }
 }

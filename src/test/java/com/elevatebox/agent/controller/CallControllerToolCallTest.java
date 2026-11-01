@@ -5,7 +5,7 @@ import com.elevatebox.agent.service.CallRecordService;
 import com.elevatebox.agent.service.CallStateStore;
 import com.elevatebox.agent.service.LeadClassifierService;
 import com.elevatebox.agent.service.OptInService;
-import com.elevatebox.agent.service.VapiService;
+import com.elevatebox.agent.service.OutboundCaller;
 import com.elevatebox.agent.service.WhatsAppService;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class CallControllerToolCallTest {
@@ -22,19 +22,23 @@ class CallControllerToolCallTest {
     private WhatsAppService whatsApp;
     private LeadClassifierService classifier;
     private ThreadPoolTaskExecutor executor;
+    private OptInService optIn;
+    private CallRecordService records;
 
     @BeforeEach
     void setUp() {
         whatsApp = mock(WhatsAppService.class);
         classifier = mock(LeadClassifierService.class);
         executor = mock(ThreadPoolTaskExecutor.class);
+        optIn = mock(OptInService.class);
+        records = mock(CallRecordService.class);
+        doAnswer(inv -> { ((Runnable) inv.getArgument(0)).run(); return null; }).when(executor).execute(any(Runnable.class));
     }
 
     private CallController controller(boolean keywordMidCall) {
         CallStateStore state = new CallStateStore();
-        OptInService optIn = mock(OptInService.class);
-        return new CallController(mock(VapiService.class), whatsApp, classifier, state, executor,
-                mock(CallRecordService.class), new AgentToolService(whatsApp, state, optIn, "https://example.com"),
+        return new CallController(mock(OutboundCaller.class), "+910000000000", whatsApp, classifier, state, executor,
+                records, new AgentToolService(whatsApp, state, optIn, "https://example.com"),
                 optIn, keywordMidCall);
     }
 
@@ -117,5 +121,55 @@ class CallControllerToolCallTest {
                  "transcript":"please send me the pricing","call":{"id":"call-1"}}}""");
 
         verify(executor).execute(any(Runnable.class));
+    }
+
+    @Test
+    void bolnaToolFindsTheCallByTheCustomersNumber() {
+        when(optIn.recentCallIdForPhone("+919876543210")).thenReturn(java.util.Optional.of("exec-1"));
+        when(optIn.phoneForCall("exec-1")).thenReturn(java.util.Optional.of("+919876543210"));
+        when(whatsApp.sendMidCallMessage(any(), any())).thenReturn("wamid.1");
+        CallController controller = controller(false);
+
+        controller.sendWhatsAppTool(null, "{\"topic\":\"pricing\",\"to_number\":\"+919876543210\"}");
+        var second = controller.sendWhatsAppTool(null, "{\"topic\":\"pricing\",\"to_number\":\"+919876543210\"}");
+
+        verify(whatsApp, times(1)).sendMidCallMessage(eq("+919876543210"), any());
+        assertTrue(((String) second.getBody().get("result")).contains("already sent"));
+    }
+
+    @Test
+    void bolnaCompletedCallRunsThePostCallPipelineOnce() {
+        CallController controller = controller(false);
+        String body = """
+                {"id":"exec-1","status":"completed","transcript":"assistant: Hi\nuser: I want a store"}""";
+
+        assertEquals("OK", controller.bolnaCallback(body).getBody());
+        assertEquals("DUPLICATE", controller.bolnaCallback(body).getBody());
+
+        verify(classifier, times(1)).processPostCall(contains("I want a store"), any());
+        verify(records).save(eq("exec-1"), eq("bolna"), any());
+    }
+
+    @Test
+    void bolnaInProgressStatusesAreIgnored() {
+        controller(false).bolnaCallback("{\"id\":\"exec-1\",\"status\":\"in-progress\"}");
+
+        verifyNoInteractions(classifier, optIn);
+    }
+
+    @Test
+    void bolnaUnansweredCallIsHandedToTheOptInOnce() {
+        CallController controller = controller(false);
+
+        controller.bolnaCallback("{\"id\":\"exec-1\",\"status\":\"no-answer\"}");
+        controller.bolnaCallback("{\"id\":\"exec-1\",\"status\":\"no-answer\"}");
+
+        verify(optIn, times(1)).callNotConnected("exec-1");
+        verifyNoInteractions(classifier);
+    }
+
+    @Test
+    void bolnaCallbackRejectsANonObjectBody() {
+        assertEquals(400, controller(false).bolnaCallback("[1]").getStatusCode().value());
     }
 }

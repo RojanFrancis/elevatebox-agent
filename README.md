@@ -60,7 +60,7 @@ flowchart LR
 
 | What | How |
 |------|-----|
-| Voice calling | Vapi + Twilio — outbound, India routing |
+| Voice calling | Vapi + Twilio, or Bolna with its own Indian numbers (`VOICE_PROVIDER`) |
 | Voice | Cartesia Sindhu — Indian English, 290ms latency |
 | STT | Soniox RT v5 — Indian English, 1.8% WER |
 | AI conversation | GPT-4.1 — live sales conversation |
@@ -239,6 +239,17 @@ The repo has a `Dockerfile`, so Render builds it directly: create a **Web Servic
 
 Then point the Vapi assistant's Server URL at `https://<your-service>.onrender.com/api/call/webhook` (keeping the Bearer credential), so the webhook no longer depends on a local tunnel. On Render's free tier the service sleeps when idle, so the first request after a pause is slow.
 
+### Calling through Bolna
+
+[Bolna](https://www.bolna.ai) is an Indian voice-AI platform that calls Indian mobiles from its own numbers, so it needs no Twilio account. To use it instead of Vapi:
+
+1. In Render, set `VOICE_PROVIDER=bolna`, `BOLNA_API_KEY` (Bolna → Developers → API Keys) and `BOLNA_AGENT_ID` (the agent's ID in Agent Studio).
+2. In the agent's **Extractions** tab, set the webhook URL to `https://<your-service>.onrender.com/api/call/bolna/callback`, turn on **Add headers** and add `Authorization: Bearer <VAPI_WEBHOOK_SECRET>`.
+3. In the **Tools** tab, add the custom function in [`bolna/send-whatsapp-tool.json`](bolna/send-whatsapp-tool.json), with the same secret in `api_token`.
+4. In the prompt, greet the customer with `{customer_name}`, and set a maximum call length in the **Calling** tab.
+
+Bolna posts every status change to the callback. A `completed` call with a transcript runs the same post-call pipeline as Vapi's end-of-call report, once. A call that was not answered, was busy or failed lifts the 24-hour cooldown and tells the customer on WhatsApp to reply *CALL* again. Bolna's tools cannot send the call ID, so the tool sends the customer's number (`to_number`) and the service matches it to the call placed to that number in the last 15 minutes.
+
 ---
 
 ## Status and limits
@@ -248,14 +259,16 @@ Then point the Vapi assistant's Server URL at `https://<your-service>.onrender.c
 - One structured Gemini request per call returns the rating, reason, summary, WhatsApp recap and callback request. Unclear or failed answers become UNKNOWN, transient errors are retried, and fallback models take over when a model is out of quota.
 - Calls are stored in TiDB Cloud (the outcome only, never the transcript). The leads API and page need the API key. The public demo endpoint can only analyse and is rate limited.
 - In a Vapi browser call (October 2026) the assistant called `send_whatsapp` on its own when asked for pricing, the endpoint answered with success (Meta accepted the message) and the assistant told the caller it was sent. Delivery to the phone then depends on WhatsApp's 24-hour window, which the opt-in flow below opens.
-- 129 automated tests run in CI on every push. The service runs from a Dockerfile on Render.
+- The WhatsApp opt-in ran live (31 October 2026): a real "hi" got the instructions, "call me" got the "calling now" reply and created the call, and a second request inside the cooldown was refused.
+- A call from Bolna's Indian number reached an Indian mobile (placed from Bolna's dashboard, November 2026).
+- 143 automated tests run in CI on every push. The service runs from a Dockerfile on Render.
 
-**Built and unit-tested, not yet run live:** the WhatsApp opt-in flow (it needs the Meta webhook configured and a funded Twilio number for the phone leg).
+**Built and unit-tested, not yet run live:** the Bolna integration in this service (starting the call, the callback, the `to_number` tool match and the "couldn't reach you" message).
 
 **Built and unit-tested, not separately re-checked live:** the keyword fallback for the mid-call WhatsApp, and the de-duplication of repeated webhooks.
 
 **Known limits**
-- The phone leg (Vapi with Twilio) worked in earlier versions, but the Twilio account is currently out of funds, so outbound phone calls have not been re-run since the rewrite. The browser-call path above is what was verified.
+- The phone leg through Vapi needs a funded Twilio number. The Twilio account ran out of funds, so Vapi phone calls have not been re-run since the rewrite; Bolna is the replacement for the phone leg.
 - WhatsApp runs on Meta's test number: it only reaches registered recipients, and free-form text only inside 24 hours of their last message. A production launch would register approved message templates.
 - Callbacks are detected and confirmed by WhatsApp, but nothing schedules the call itself yet.
 - Telugu, Hindi and English handling lives in the Vapi assistant's configuration, not in this repository's tests.
