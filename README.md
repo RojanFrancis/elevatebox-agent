@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/RojanFrancis/elevatebox-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/RojanFrancis/elevatebox-agent/actions/workflows/ci.yml)
 
-**Live demo:** https://elevatebox-agent.onrender.com (paste a call transcript and see the lead rating, summary and WhatsApp follow-up). It runs on Render's free tier, so the first load after a quiet spell can take a minute.
+**Live demo:** https://elevatebox-agent.onrender.com: an animated replay of a real call (WhatsApp "call me" → the phone call → the mid-call WhatsApp → the summary and lead rating), plus a lead analyser you can try on your own transcript. It runs on Render's free tier, so the first load after a quiet spell can take a minute.
 
-![The public demo page after analysing a sample call](docs/demo.png)
+![The public demo page: a replay of a real call next to the pitch](docs/demo.png)
 
 ![The leads dashboard listing analysed calls](docs/leads.png)
 
