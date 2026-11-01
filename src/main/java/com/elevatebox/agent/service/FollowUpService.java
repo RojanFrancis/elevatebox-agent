@@ -46,6 +46,10 @@ public class FollowUpService {
     @Value("${agent.build-image-url:https://github.com/RojanFrancis/elevatebox-agent}")
     private String buildImageUrl;
 
+    /** The voice platform placing the calls, named in the stack line. Property: {@code voice.provider}. */
+    @Value("${voice.provider:vapi}")
+    private String voiceProvider;
+
     // ─── Post-call WhatsApp with all 4 required things ───────────────────────
 
     /**
@@ -118,7 +122,7 @@ public class FollowUpService {
                 "📄 Resume: %s\n\n" +
                 "*How I built this system:*\n" +
                 "🏗️ %s\n" +
-                "Stack: Spring Boot + Vapi + Gemini AI + Meta WhatsApp API\n" +
+                "Stack: Spring Boot + " + voicePlatform() + " + Gemini AI + Meta WhatsApp API\n" +
                 "━━━━━━━━━━━━━━━",
                 emoji,
                 context,
@@ -128,5 +132,9 @@ public class FollowUpService {
                 resumeLink,
                 buildImageUrl
         );
+    }
+
+    private String voicePlatform() {
+        return "bolna".equalsIgnoreCase(voiceProvider) ? "Bolna" : "Vapi";
     }
 }

@@ -260,10 +260,12 @@ Bolna posts every status change to the callback. A `completed` call with a trans
 - Calls are stored in TiDB Cloud (the outcome only, never the transcript). The leads API and page need the API key. The public demo endpoint can only analyse and is rate limited.
 - In a Vapi browser call (October 2026) the assistant called `send_whatsapp` on its own when asked for pricing, the endpoint answered with success (Meta accepted the message) and the assistant told the caller it was sent. Delivery to the phone then depends on WhatsApp's 24-hour window, which the opt-in flow below opens.
 - The WhatsApp opt-in ran live (31 October 2026): a real "hi" got the instructions, "call me" got the "calling now" reply and created the call, and a second request inside the cooldown was refused.
-- A call from Bolna's Indian number reached an Indian mobile (placed from Bolna's dashboard, November 2026).
+- The full flow through Bolna ran live (1 November 2026): "call me" on WhatsApp got the reply, Bolna called the Indian mobile that sent it, and during the conversation the agent called `send_whatsapp` on its own, so a message with a note about the caller's business ("Saree business looking for e-commerce website development") and the portfolio link arrived on the same number while the call was still going.
 - 143 automated tests run in CI on every push. The service runs from a Dockerfile on Render.
 
-**Built and unit-tested, not yet run live:** the Bolna integration in this service (starting the call, the callback, the `to_number` tool match and the "couldn't reach you" message).
+**Partly checked live:** Bolna's sample `completed` webhook (sent from its dashboard) passed the secret check and ran the post-call pipeline; the post-call summary after a real Bolna call has not been confirmed yet.
+
+**Built and unit-tested, not yet run live:** the "couldn't reach you" message after an unanswered Bolna call.
 
 **Built and unit-tested, not separately re-checked live:** the keyword fallback for the mid-call WhatsApp, and the de-duplication of repeated webhooks.
 
